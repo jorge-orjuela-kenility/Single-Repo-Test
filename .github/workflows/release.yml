@@ -39,12 +39,14 @@ jobs:
       CHANNEL_PLIST_KEY: "TRVReleaseChannel"
       GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
 
-      # Paths used by all xcodebuild calls
       DERIVED_DATA: ${{ github.workspace }}/DerivedData
       SPM_CHECKOUTS: ${{ github.workspace }}/.spm-checkouts
-
-      # Use a "small" scheme for resolving packages
       RESOLVE_SCHEME: DI
+
+      # Prevent interactive hangs
+      GIT_TERMINAL_PROMPT: "0"
+      GCM_INTERACTIVE: "Never"
+      NSUnbufferedIO: "YES"
 
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +68,17 @@ jobs:
           set -euo pipefail
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch origin --tags
+
+      - name: Force GitHub token for ALL SwiftPM fetches (critical)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Make every https://github.com/* fetch use the PAT (avoids prompts + rate-limits)
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
+          git config --global advice.detachedHead false
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 60
 
       - name: Validate release policy
         shell: bash
@@ -108,11 +121,13 @@ jobs:
           fi
 
           safe_trim() {
-            printf "%s" "$1" | tr '\t' ' ' | tr -s ' ' | sed 's/^ *//; s/ *$//'
+            printf "%s" "$1" \
+              | tr '\t' ' ' \
+              | tr -s ' ' \
+              | sed 's/^ *//; s/ *$//'
           }
 
           cut=""
-
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$EVENT_FILE" ]; then
             cut="$(jq -r '.inputs.cut // empty' "$EVENT_FILE" 2>/dev/null || true)"
           fi
@@ -127,12 +142,18 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$EVENT_FILE" ]; then
             frameworks="$(jq -r '.inputs.frameworks // empty' "$EVENT_FILE" 2>/dev/null || true)"
             if [ "$frameworks" = "all" ] || [ -z "$frameworks" ]; then
-              allow="$(grep -B 1 'type: framework' "$GITHUB_WORKSPACE/project.yml" 2>/dev/null | grep -E '^  [A-Za-z0-9]+:' | sed 's/^  //; s/:$//' | tr '\n' ' ' | sed 's/ $//')"
+              allow="$(grep -B 1 'type: framework' "$GITHUB_WORKSPACE/project.yml" 2>/dev/null \
+                | grep -E '^  [A-Za-z0-9]+:' \
+                | sed 's/^  //; s/:$//' \
+                | tr '\n' ' ' | sed 's/ $//')"
             else
               allow="$frameworks"
             fi
           else
-            allow="$(grep -B 1 'type: framework' "$GITHUB_WORKSPACE/project.yml" 2>/dev/null | grep -E '^  [A-Za-z0-9]+:' | sed 's/^  //; s/:$//' | tr '\n' ' ' | sed 's/ $//')"
+            allow="$(grep -B 1 'type: framework' "$GITHUB_WORKSPACE/project.yml" 2>/dev/null \
+              | grep -E '^  [A-Za-z0-9]+:' \
+              | sed 's/^  //; s/:$//' \
+              | tr '\n' ' ' | sed 's/ $//')"
           fi
 
           allow="$(safe_trim "$allow")"
@@ -153,27 +174,30 @@ jobs:
           echo "DRY=$dry" >> "$SCOPE_FILE"
           echo "Wrote scope to $SCOPE_FILE"
 
-      # IMPORTANT: cache BEFORE resolve, and do NOT wipe the cached directories after
-      - name: Cache SwiftPM + Xcode SourcePackages
+      # Cache only SwiftPM cache + local checkouts (do NOT cache Xcode SourcePackages)
+      - name: Cache SwiftPM
         uses: actions/cache@v4
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
-            ~/Library/Developer/Xcode/SourcePackages
             ${{ github.workspace }}/.spm-checkouts
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', '**/Package.resolved', 'project.yml') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved', 'project.yml') }}
           restore-keys: |
             spm-${{ runner.os }}-
 
-      - name: Clean DerivedData (keep SwiftPM caches)
+      - name: Clean DerivedData + Xcode SourcePackages (avoid hangs)
         shell: bash
         run: |
           set -euo pipefail
           rm -rf "${DERIVED_DATA}" || true
+          rm -rf "${SPM_CHECKOUTS}" || true
           mkdir -p "${DERIVED_DATA}"
           mkdir -p "${SPM_CHECKOUTS}"
 
-      - name: Generate Xcode project (no open)
+          # This cache is a common source of stuck resolves on runners.
+          rm -rf ~/Library/Developer/Xcode/SourcePackages || true
+
+      - name: Generate Xcode project (NO open)
         timeout-minutes: 25
         shell: bash
         run: |
@@ -186,8 +210,9 @@ jobs:
           fi
           # shellcheck source=/dev/null
           source "$SCOPE_FILE"
+
           if [ -z "${AFF:-}" ]; then
-            echo "AFF is empty; skipping."
+            echo "AFF is empty; skipping generate Xcode project."
             exit 0
           fi
 
@@ -207,9 +232,8 @@ jobs:
           echo "PROJECT=$proj" >> "$GITHUB_ENV"
           echo "Using PROJECT=$proj"
 
-      # ✅ Key fix: DO NOT use -disableAutomaticPackageResolution here
-      - name: Resolve SwiftPM dependencies (retry)
-        timeout-minutes: 25
+      - name: Resolve SwiftPM dependencies (retry + watchdog)
+        timeout-minutes: 50
         shell: bash
         run: |
           set -euo pipefail
@@ -224,19 +248,27 @@ jobs:
               -project "${PROJECT}" \
               -scheme "${RESOLVE_SCHEME}" \
               -derivedDataPath "${DERIVED_DATA}" \
-              -clonedSourcePackagesDirPath "${SPM_CHECKOUTS}"
+              -clonedSourcePackagesDirPath "${SPM_CHECKOUTS}" \
+              -verbose
           }
 
           for i in 1 2 3; do
             echo "=== Resolve attempt $i/3 ==="
+
+            ( while true; do
+                echo "[watchdog] still resolving... $(date)"
+                sleep 30
+              done ) &
+            WATCHDOG_PID=$!
+
             if resolve; then
+              kill $WATCHDOG_PID || true
               echo "✅ SwiftPM resolved"
-              echo "Package.resolved locations:"
-              find "${PROJECT}" -path "*xcshareddata/swiftpm/Package.resolved" -maxdepth 10 -print || true
               exit 0
             fi
 
-            echo "⚠️ Resolve failed; cleaning only SPM_CHECKOUTS and retrying..."
+            kill $WATCHDOG_PID || true
+            echo "⚠️ Resolve failed; clearing checkouts and retrying..."
             rm -rf "${SPM_CHECKOUTS}" || true
             mkdir -p "${SPM_CHECKOUTS}"
             sleep 10
@@ -245,19 +277,12 @@ jobs:
           echo "❌ SwiftPM resolve failed after retries"
           exit 1
 
-      - name: Build (dependency order) - locked package resolution
-        timeout-minutes: 90
+      - name: Build (dependency order via Makefile)
+        timeout-minutes: 120
         shell: bash
         run: |
           set -euo pipefail
-
-          # Use make build, but force xcodebuild to NOT re-resolve packages.
-          # If your Makefile doesn't pass these flags, it will still work, because
-          # resolution already happened; this just makes it deterministic.
-          export XCODEBUILD_FLAGS="-derivedDataPath \"${DERIVED_DATA}\" -clonedSourcePackagesDirPath \"${SPM_CHECKOUTS}\" -disableAutomaticPackageResolution"
           export SIM_DEST="platform=iOS Simulator,name=iPhone 16,OS=latest"
-
-          # If you want to avoid opening Xcode in CI, do not use genbuild.
           make build SIM_DEST="${SIM_DEST}"
 
       - name: Compute versions, update Info.plist, generate Version.swift, tag & release
@@ -271,6 +296,7 @@ jobs:
           set -eo pipefail
           trap 'ret=$?; echo "ERROR: command failed with exit $ret: ${BASH_COMMAND} at line ${LINENO}"; exit $ret' ERR
 
+          # load scope vars produced by the scope step
           SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
           if [ ! -f "$SCOPE_FILE" ]; then
             echo "Scope file not found; exiting (nothing to cut)."
@@ -279,6 +305,7 @@ jobs:
           # shellcheck source=/dev/null
           source "$SCOPE_FILE"
 
+          # Only continue if both CUT and AFF are set
           if [ -z "${CUT:-}" ] || [ -z "${AFF:-}" ]; then
             echo "CUT or AFF empty; nothing to do."
             exit 0
@@ -314,6 +341,9 @@ jobs:
               patch) patch=$((patch+1)) ;;
             esac
             echo "${major}.${minor}.${patch}"
+            echo "[DEBUG bump] last_base_version=$1" >&2
+            echo "[DEBUG bump] range=$2" >&2
+            git log --format='%h %s' $2 >&2
           }
 
           rc_build_for_base_all() {
@@ -335,7 +365,10 @@ jobs:
               case "$channel" in
                 RC)   [ -z "${SDK_NON_PROD_KEY:-}" ] && { echo "CORE SDK secret missing for channel RC"; exit 1; } ;;
                 PROD) [ -z "${SDK_PROD_KEY:-}" ] && { echo "CORE SDK secret missing for channel PROD"; exit 1; } ;;
-                *) echo "Unknown channel '$channel' for core SDK"; exit 1 ;;
+                *)
+                  echo "Unknown channel '$channel' for core SDK"
+                  exit 1
+                  ;;
               esac
             fi
 
@@ -380,6 +413,7 @@ jobs:
               [ -z "$s" ] && continue
               clean="$(clean_changelog_subject "$s")"
               [[ "$s" =~ BREAKING\ CHANGE|!\: ]] && breaks="${breaks}"$'\n- '"$clean"
+
               if   [[ "$s" =~ ^feat(\(|:|\!) ]];      then feats="${feats}"$'\n- '"$clean"
               elif [[ "$s" =~ ^fix(\(|:|\!) ]];       then fixes="${fixes}"$'\n- '"$clean"
               elif [[ "$s" =~ ^perf(\(|:|\!) ]];      then perfs="${perfs}"$'\n- '"$clean"
@@ -391,6 +425,7 @@ jobs:
               elif [[ "$s" =~ ^chore(\(|:|\!) ]];     then chores="${chores}"$'\n- '"$clean"
               fi
             done < <(git log --pretty=format:'%s' $range -- "$path" || true)
+
             {
               echo "## Changes"
               [ -n "$breaks" ] && { echo; echo "### ⚠️ Breaking Changes"; echo "$breaks"; }
@@ -419,17 +454,50 @@ jobs:
 
             prefix="$key"
             case "$key" in
-              DI)                 path="Libraries/Foundation/Core/DI";                    vdir="Libraries/Foundation/Core/DI/Sources" ;;
-              TruVideoRuntime)    path="Libraries/Foundation/Core/Runtime";               vdir="Libraries/Foundation/Core/Runtime/Sources" ;;
-              StorageKit)         path="Libraries/Foundation/Extended/Storage";           vdir="Libraries/Foundation/Extended/Storage/Sources" ;;
-              TruVideoFoundation) path="Libraries/Foundation/Core/Foundation";            vdir="Libraries/Foundation/Core/Foundation/Sources" ;;
-              Networking)         path="Libraries/Internal/Core/Networking";              vdir="Libraries/Internal/Core/Networking/Sources" ;;
-              TruVideoApi)        path="Libraries/Internal/Extended/TruVideoApi";         vdir="Libraries/Internal/Extended/TruVideoApi/Sources" ;;
-              TruvideoSdk)        path="Libraries/External/Extended/App";                 vdir="Libraries/External/Extended/App/Sources" ;;
-              TruVideoMediaUpload)path="Libraries/Plugins/Core/MediaUpload";              vdir="Libraries/Plugins/Core/MediaUpload/Sources" ;;
-              TruvideoSdkCamera)  path="Libraries/Plugins/External/Camera";               vdir="Libraries/Plugins/External/Camera/Sources" ;;
-              TruvideoSdkMedia)   path="Libraries/Plugins/External/Media";                vdir="Libraries/Plugins/External/Media/Sources" ;;
-              *) echo "Error: Unknown framework key '$key'"; exit 1 ;;
+              DI)
+                path="Libraries/Foundation/Core/DI"
+                vdir="Libraries/Foundation/Core/DI/Sources"
+                ;;
+              TruVideoRuntime)
+                path="Libraries/Foundation/Core/Runtime"
+                vdir="Libraries/Foundation/Core/Runtime/Sources"
+                ;;
+              StorageKit)
+                path="Libraries/Foundation/Extended/Storage"
+                vdir="Libraries/Foundation/Extended/Storage/Sources"
+                ;;
+              TruVideoFoundation)
+                path="Libraries/Foundation/Core/Foundation"
+                vdir="Libraries/Foundation/Core/Foundation/Sources"
+                ;;
+              Networking)
+                path="Libraries/Internal/Core/Networking"
+                vdir="Libraries/Internal/Core/Networking/Sources"
+                ;;
+              TruVideoApi)
+                path="Libraries/Internal/Extended/TruVideoApi"
+                vdir="Libraries/Internal/Extended/TruVideoApi/Sources"
+                ;;
+              TruvideoSdk)
+                path="Libraries/External/Extended/App"
+                vdir="Libraries/External/Extended/App/Sources"
+                ;;
+              TruVideoMediaUpload)
+                path="Libraries/Plugins/Core/MediaUpload"
+                vdir="Libraries/Plugins/Core/MediaUpload/Sources"
+                ;;
+              TruvideoSdkCamera)
+                path="Libraries/Plugins/External/Camera"
+                vdir="Libraries/Plugins/External/Camera/Sources"
+                ;;
+              TruvideoSdkMedia)
+                path="Libraries/Plugins/External/Media"
+                vdir="Libraries/Plugins/External/Media/Sources"
+                ;;
+              *)
+                echo "Error: Unknown framework key '$key' (not in project.yml type: framework list?)"
+                exit 1
+                ;;
             esac
 
             if [ "$cut_type" = "rc" ]; then
@@ -455,6 +523,11 @@ jobs:
               git add "$vdir/Version.swift"
             fi
 
+            if [ "$phase" = "apply" ]; then
+              cd "$ORIGINAL_DIR" || true
+              return 0
+            fi
+
             cd "$ORIGINAL_DIR" || true
             return 0
           }
@@ -467,12 +540,8 @@ jobs:
               | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
               | sort -V | tail -n1
             )
-
-            latest_tag=$(
-              git for-each-ref --sort=-creatordate refs/tags --format='%(refname:short)' 2>/dev/null \
-                | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | head -n1
-            )
-
+            latest_tag=$( git for-each-ref --sort=-creatordate refs/tags --format='%(refname:short)' 2>/dev/null \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | head -n1 )
             since_ref=""
             [ -n "$latest_tag" ] && since_ref="$(git rev-list -n1 "$latest_tag")"
             SHARED_RANGE="${since_ref:+${since_ref}..}HEAD"
@@ -501,6 +570,7 @@ jobs:
             fi
 
             echo "Single track version: $SHARED_FULL (${SHARED_CHANNEL}, build ${SHARED_BUILD_NUM})"
+
             SHARED_CHANGELOG="$(gen_changelog_md "$SHARED_RANGE" ".")"
 
             IFS=' ' read -r -a AFF_ARR <<< "${AFF}"
@@ -587,7 +657,6 @@ jobs:
                 echo "ERROR: Package.swift not found in ${EXTERNAL_REPO}"
                 exit 1
               fi
-
               sed -i '' "s|<version>|${VERSION}|g" "$PACKAGE_FILE"
               for key in "${PACKAGE_FRAMEWORKS[@]}"; do
                 var="CHECKSUM_${key}"
@@ -600,7 +669,6 @@ jobs:
               else
                 git checkout -b "$VERSION"
               fi
-
               git add "$PACKAGE_FILE"
               if ! git diff --cached --quiet; then
                 git commit -m "SPM: Update Package.swift for $VERSION"
