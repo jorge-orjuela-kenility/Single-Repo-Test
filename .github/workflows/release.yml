@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  cut_release:
+  release:
     if: |
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
       (github.event_name == 'workflow_dispatch')
@@ -48,12 +48,9 @@ jobs:
 
       - name: Tooling / Git identity
         run: |
-          brew update >/dev/null
-          brew install jq xcodegen >/dev/null || true
-          brew install swiftlint
-          brew install swiftformat
-          git config user.name  "truvideo[bot]"
-          git config user.email "truvideo[bot]@users.noreply.github.com"
+         brew install jq xcodegen swiftlint swiftformat || true
+         git config user.name  "truvideo[bot]"
+         git config user.email "truvideo[bot]@users.noreply.github.com"
 
       - name: Clone remote repository (external token)
         run: |
@@ -263,30 +260,24 @@ jobs:
             local vfile="$destdir/Version.swift"
 
             if [ "$key" = "TruvideoSdk" ]; then
-              local secret=""
               case "$channel" in
-                RC)   secret="${SDK_NON_PROD_KEY:-}" ;;
-                PROD) secret="${SDK_PROD_KEY:-}" ;;
+                RC)   [ -z "${SDK_NON_PROD_KEY:-}" ] && { echo "CORE SDK secret missing for channel RC"; exit 1; } ;;
+                PROD) [ -z "${SDK_PROD_KEY:-}" ] && { echo "CORE SDK secret missing for channel PROD"; exit 1; } ;;
                 *)
                   echo "Unknown channel '$channel' for core SDK"
                   exit 1
                   ;;
               esac
-              if [ -z "$secret" ]; then
-                echo "CORE SDK secret missing for channel '$channel'"
-                exit 1
-              fi
             fi
 
-            if [ -f "$vfile" ]; then              
+            if [ -f "$vfile" ]; then
               sed -i '' "s/SDKVersionNumber = \"[^\"]*\"/SDKVersionNumber = \"$full\"/" "$vfile"
               sed -i '' "s/SDKEnvironment = \"[^\"]*\"/SDKEnvironment = \"$channel\"/" "$vfile"
               sed -i '' "s/SDKBuildNumber = \"[^\"]*\"/SDKBuildNumber = \"$build\"/" "$vfile"
-              if [ "$key" = "TruvideoSdk" ] && [ -n "$secret" ]; then
-                sed -i '' "s/SDKSecretKey = \"[^\"]*\"/SDKSecretKey = \"$secret\"/" "$vfile"
+              if [ "$key" = "TruvideoSdk" ]; then
+                sed -i '' 's/SDKSecretKey = "[^"]*"/SDKSecretKey = ""/' "$vfile"
               fi
             else
-              # Create new file (e.g. new framework) — match repo style
               {
                 echo "//"
                 echo "// Copyright © $(date +%Y) TruVideo. All rights reserved."
@@ -297,7 +288,7 @@ jobs:
                 echo "let SDKVersionNumber = \"$full\""
                 echo "let SDKEnvironment = \"$channel\""
                 echo "let SDKBuildNumber = \"$build\""
-                [ "$key" = "TruvideoSdk" ] && [ -n "${secret:-}" ] && echo "let SDKSecretKey = \"$secret\""
+                [ "$key" = "TruvideoSdk" ] && echo 'let SDKSecretKey = ""'
               } > "$vfile"
             fi
           }
@@ -511,6 +502,17 @@ jobs:
                 git tag "${RELEASE_TAG}"
                 git push origin "refs/tags/${RELEASE_TAG}"
                 echo "✅ Tag '${RELEASE_TAG}' pushed."
+              fi
+              
+              CORE_VERSION_SWIFT="$GITHUB_WORKSPACE/Libraries/External/Extended/App/Sources/Version.swift"
+              if [ -f "$CORE_VERSION_SWIFT" ]; then
+                BUILD_SECRET=""
+                [ "$SHARED_CHANNEL" = "RC" ] && BUILD_SECRET="${SDK_NON_PROD_KEY:-}"
+                [ "$SHARED_CHANNEL" = "PROD" ] && BUILD_SECRET="${SDK_PROD_KEY:-}"
+                if [ -n "$BUILD_SECRET" ]; then
+                  sed -i '' "s|SDKSecretKey = \"\"|SDKSecretKey = \"${BUILD_SECRET}\"|" "$CORE_VERSION_SWIFT"
+                  echo "✅ Injected SDK key into Version.swift for XCFramework build (not committed)."
+                fi
               fi
 
               # Build all XCFrameworks once via Makefile (output: DerivedData/XCFrameworks/)
