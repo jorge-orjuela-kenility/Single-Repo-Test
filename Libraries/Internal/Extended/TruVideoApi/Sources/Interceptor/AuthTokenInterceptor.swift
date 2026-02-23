@@ -1,0 +1,47 @@
+//
+// Copyright © 2025 TruVideo. All rights reserved.
+//
+
+import DI
+import Foundation
+internal import Networking
+
+/// An interceptor that automatically adds authentication tokens to HTTP requests.
+///
+/// This interceptor checks for existing authentication sessions and automatically
+/// adds the bearer token to requests that don't already have an authorization header.
+/// It ensures that authenticated requests are properly authorized without manual
+/// token management.
+struct AuthTokenInterceptor: RequestInterceptor {
+    // MARK: - Dependencies
+
+    @Dependency(\.sessionManager)
+    private var sessionManager: any SessionManager
+
+    // MARK: - Initializer
+
+    /// Creates a new instance of the `AuthTokenInterceptor`.
+    init() {}
+
+    // MARK: - RequestInterceptor
+
+    /// Inspects and adapts the specified `URLRequest` in some
+    /// manner and returns the Result.
+    ///
+    /// - Parameters:
+    ///   - request: The `URLRequest` tha has been intercepted.
+    ///   - session: The `Session` that produced the `Request`.
+    /// - Throws: An error if something went wrong.
+    func intercept(_ request: URLRequest, for session: Session) async throws -> URLRequest {
+        var request = request
+        let requiresAuthorization = !request.allHTTPHeaders.contains { $0.name.lowercased() == "authorization" }
+
+        if let authSession = sessionManager.currentSession, requiresAuthorization {
+            var headers = request.allHTTPHeaders
+            headers.append(.bearerToken(authSession.authToken.accessToken))
+            request.allHTTPHeaders = headers
+        }
+
+        return request
+    }
+}

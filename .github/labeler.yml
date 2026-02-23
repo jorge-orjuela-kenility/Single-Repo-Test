@@ -1,0 +1,56 @@
+truvideoCameraSdk:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/Plugins/External/Camera/**
+
+truvideoSdk:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/External/Extended/App/**
+
+truvideoSdkMedia:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/Plugins/External/Media/**
+
+truVideoMediaUpload:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/Plugins/Core/MediaUpload/**
+
+# Foundation libraries (Core + Extended)
+foundation:core:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/Foundation/Core/**
+
+foundation:extended:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/Foundation/Extended/**
+
+# Internal libraries (Core + Extended)
+internal:core:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/Internal/Core/**
+
+internal:extended:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/Internal/Extended/**
+
+# External core (if any)
+internal:external-core:
+  - changed-files:
+      - any-glob-to-any-file: |
+          Libraries/External/Core/**
+
+repo:
+  - changed-files:
+      - any-glob-to-any-file: |
+          .github/**
+          Scripts/**
+          Docs/**
+          README.md
+          LICENSE

@@ -1,0 +1,61 @@
+DI:
+  - Libraries/Foundation/Core/DI/Sources/**
+  - Libraries/Foundation/Core/DI/Tests/**
+
+Registry:
+  - Libraries/Foundation/Core/Registry/Sources/**
+  - Libraries/Foundation/Core/Registry/Tests/**
+  - Libraries/Foundation/Core/Registry/Testing/**
+
+StorageKit:
+  - Libraries/Foundation/Core/Storage/Sources/**
+  - Libraries/Foundation/Core/Storage/Tests/**
+  - Libraries/Foundation/Core/Storage/Testing/**
+
+Utilities:
+  - Libraries/Foundation/Core/Utilities/Sources/**
+  - Libraries/Foundation/Core/Utilities/Tests/**
+  - Libraries/Foundation/Core/Utilities/Testing/**
+
+CoreDataUtilities:
+  - Libraries/Foundation/Extended/CoreDataUtilities/Sources/**
+  - Libraries/Foundation/Extended/CoreDataUtilities/Tests/**
+
+Telemetry:
+  - Libraries/Foundation/Extended/Telemetry/Sources/**
+  - Libraries/Foundation/Extended/Telemetry/Tests/**
+  - Libraries/Foundation/Extended/Telemetry/Testing/**
+
+InternalUtilities:
+  - Libraries/Internal/Core/InternalUtilities/Sources/**
+  - Libraries/Internal/Core/InternalUtilities/Tests/**
+
+Networking:
+  - Libraries/Internal/Core/Networking/Sources/**
+  - Libraries/Internal/Core/Networking/Tests/**
+  - Libraries/Internal/Core/Networking/Testing/**
+
+CloudStorageKit:
+  - Libraries/Internal/Extended/CloudStorage/Sources/**
+  - Libraries/Internal/Extended/CloudStorage/Testing/**
+  - Libraries/Internal/Extended/CloudStorage/Tests/**
+
+MediaUpload:
+  - Libraries/Internal/Extended/MediaUpload/Sources/**
+  - Libraries/Internal/Extended/MediaUpload/Tests/**
+
+TruVideoApi:
+  - Libraries/Internal/Extended/TruVideoApi/Sources/**
+  - Libraries/Internal/Extended/TruVideoApi/Tests/**
+  - Libraries/Internal/Extended/TruVideoApi/Testing/**
+
+TruvideoSdk:
+  - Libraries/External/Extended/App/Sources/**
+  - Libraries/External/Extended/App/Testing/**
+  - Libraries/External/Extended/App/Tests/**
+
+TruvideoSdkCamera:
+  - Libraries/Plugins/Camera/Sources/**
+  - Libraries/Plugins/Camera/Tests/**
+  - Libraries/Plugins/Camera/UITests/**
+  - Libraries/Plugins/Camera/SnapshotTests/**

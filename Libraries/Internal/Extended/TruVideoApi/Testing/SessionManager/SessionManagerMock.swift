@@ -1,0 +1,59 @@
+//
+// Copyright © 2026 TruVideo. All rights reserved.
+//
+
+import Foundation
+
+@testable import TruVideoApi
+
+/// A mock implementation of the `SessionManager` protocol for testing network requests.
+public final class SessionManagerMock: SessionManager, @unchecked Sendable {
+    // MARK: - Public Properties
+
+    /// An optional error to simulate a failure during session storage.
+    public var error: Error?
+
+    /// The currently stored authentication session, if any.
+    ///
+    /// This property provides access to the authentication session that was most recently
+    /// stored. Returns `nil` if no session has been stored or if the session has been cleared.
+    public var currentSession: AuthSession?
+
+    // MARK: - Initializer
+
+    /// Creates a new instance of the `SessionManager`.
+    public init() {}
+
+    // MARK: - SessionManager
+
+    /// Deletes the currently stored authentication session.
+    ///
+    /// This method removes the authentication session from secure storage, effectively
+    /// logging out the current user. After deletion, the `currentSession` property
+    /// will return `nil`, and any operations requiring authentication will need to re-authenticate.
+    ///
+    /// - Throws: A storage error if the session cannot be deleted from storage
+    public func deleteCurrentSession() throws {
+        if let error {
+            throw error
+        }
+
+        currentSession = nil
+    }
+
+    /// Stores the provided authentication session.
+    ///
+    /// This method persists the authentication session for future use. The session
+    /// will be available through the `currentSession` property until it is replaced
+    /// or cleared.
+    ///
+    /// - Parameter session: The authentication session to store
+    /// - Throws: An error if the session cannot be stored
+    public func set(_ session: AuthSession) throws {
+        if let error {
+            throw error
+        }
+
+        currentSession = session
+    }
+}

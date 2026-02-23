@@ -1,0 +1,296 @@
+//
+// Copyright © 2025 TruVideo. All rights reserved.
+//
+
+import Foundation
+
+/// A protocol that defines the basic interface for controlling a network or asynchronous request.
+///
+/// Types conforming to `Request` must support cancellation and resumption of the operation. This
+/// abstraction is commonly used to manage the lifecycle of an in-flight task, such as a network
+/// request or file transfer.
+public protocol Request: Hashable, CustomDebugStringConvertible {
+    /// Current `URLRequest` created on behalf of the `Request`.
+    var request: URLRequest? { get }
+
+    /// `HTTPURLResponse` received from the server, if any. If the `Request` was retried, this is the response of the
+    /// last `URLSessionTask`.
+    var response: HTTPURLResponse? { get }
+
+    /// The current retry count for this request.
+    var retryCount: Int { get }
+
+    /// Cancels the request, if allowed.
+    ///
+    /// - Returns: The current `Request` instance.
+    @discardableResult
+    func cancel() -> Self
+
+    /// Resumes the request, if allowed.
+    ///
+    /// - Returns: The current `Request` instance.
+    @discardableResult
+    func resume() -> Self
+
+    /// Resumes the request, if allowed.
+    ///
+    /// - Returns: The current `Request` instance.
+    @discardableResult
+    func suspend() -> Self
+}
+
+/// A protocol that defines the contract for network requests that expect response data.
+///
+/// `DataRequest` extends the base `Request` protocol to provide specialized functionality
+/// for handling network requests that expect a response body. It provides comprehensive
+/// serialization capabilities, validation methods, and response processing for various
+/// data formats including JSON, raw data, and strings.
+///
+/// ## Purpose
+///
+/// This protocol enables standardized handling of HTTP requests that return data,
+/// providing a consistent interface for serialization, validation, and response processing.
+/// It supports multiple output formats and flexible validation strategies, making it
+/// suitable for a wide range of network communication scenarios.
+///
+/// ## Key Features
+///
+/// - **Multiple Serialization Formats**: Support for JSON decoding, raw data, and string responses
+/// - **Flexible Validation**: Custom and status code-based response validation
+/// - **Async/Await Support**: Modern asynchronous programming with Swift concurrency
+/// - **Error Handling**: Comprehensive error reporting with `NetworkingError`
+/// - **Response Processing**: Advanced response handling with empty response code support
+/// - **Method Chaining**: Fluent API for request configuration and validation
+///
+/// ## Serialization Support
+///
+/// The protocol supports three main serialization types:
+/// 1. **Decodable Types**: JSON decoding into Swift models
+/// 2. **Raw Data**: Direct access to response bytes
+/// 3. **String**: Text-based responses with configurable encoding
+///
+/// ## Validation Capabilities
+///
+/// - **Status Code Validation**: Automatic validation against acceptable HTTP status codes
+/// - **Custom Validation**: User-defined validation logic for complex response requirements
+/// - **Default Validation**: Standard validation for common HTTP scenarios
+///
+/// ## Usage Context
+///
+/// This protocol is typically implemented by:
+/// - HTTP client libraries
+/// - API service layers
+/// - Network abstraction layers
+/// - REST client implementations
+///
+/// ## Example Usage
+///
+/// ```swift
+/// // JSON serialization
+/// let userRequest: DataRequest = session.request("https://api.example.com/users/123")
+/// let userResponse = await userRequest.serializing(User.self)
+/// let user = try await userResponse.value
+///
+/// // Raw data serialization
+/// let dataResponse = await userRequest.serializingData()
+/// let imageData = try await dataResponse.value
+///
+/// // String serialization
+/// let textResponse = await userRequest.serializingString()
+/// let text = try await textResponse.value
+///
+/// // Validation
+/// let validatedRequest = userRequest
+///     .validate(acceptableStatusCodes: [200, 201])
+///     .validate { request, response, data in
+///         guard response.statusCode == 200 else {
+///             throw NetworkingError(kind: .responseValidationFailed, failureReason: "Unexpected status")
+///         }
+///     }
+/// ```
+public protocol DataRequest: Request {
+    /// A typealias defining the signature for custom response validation closures.
+    ///
+    /// This closure type provides a standardized way to implement custom validation logic
+    /// for network responses. It allows validation of the request, response metadata,
+    /// and response data to ensure they meet specific requirements before the response
+    /// is considered successful.
+    typealias Validation = @Sendable (URLRequest?, HTTPURLResponse, Data?) throws -> Void
+
+    /// Serializes the response into a `Decodable` type asynchronously.
+    ///
+    /// This method allows decoding the response data into a `Decodable` object of type `Value`.
+    /// It internally uses `DecodableResponseSerializer` to handle serialization.
+    ///
+    /// - Parameters:
+    ///   - type: The `Decodable` type to which the response should be serialized.
+    ///   - decoder: The `JSONDecoder` used for decoding.
+    ///   - emptyResponseCodes: HTTP status codes that indicate an empty response body.
+    /// - Returns: An `Response<Value, NetworkingError>` that provides the serialized response asynchronously.
+    ///
+    /// ### Example Usage:
+    /// ```swift
+    /// let task: Response<User> = request.serializing(User.self)
+    /// let user = try await task.value
+    /// ```
+    func serializing<Value: Decodable>(
+        _ type: Value.Type,
+        decoder: JSONDecoder,
+        emptyResponseCodes: Set<Int>
+    ) async -> Response<Value, NetworkingError> where Value: Sendable
+
+    /// Serializes the response as raw `Data` asynchronously.
+    ///
+    /// This method allows retrieving the response body as raw `Data`, handling empty responses
+    /// based on predefined HTTP status codes.
+    ///
+    /// - Parameter emptyResponseCodes: HTTP status codes that indicate an empty response body.
+    /// - Returns: An `Response<Value, NetworkingError>` that provides the raw response asynchronously.
+    ///
+    /// ### Example Usage:
+    /// ```swift
+    /// let task = request.serializingData()
+    /// let data = try await task.value
+    /// ```
+    func serializingData(emptyResponseCodes: Set<Int>) async -> Response<Data, NetworkingError>
+
+    /// Serializes the response as a `String` asynchronously.
+    ///
+    /// This method retrieves the response body as a `String`, using the specified encoding.
+    /// It handles empty responses based on predefined HTTP status codes.
+    ///
+    /// - Parameters:
+    ///   - queue: The `DispatchQueue` on which serialization occurs.
+    ///   - encoding: The `String.Encoding` used for decoding the response.
+    ///   - emptyResponseCodes: HTTP status codes that indicate an empty response body.
+    /// - Returns: An `Response<Value, NetworkingError>` that provides the response as a `String` asynchronously.
+    ///
+    /// ### Example Usage:
+    /// ```swift
+    /// let task = request.serializingString()
+    /// let text = try await task.value
+    /// ```
+    func serializingString(
+        queue: DispatchQueue,
+        encoding: String.Encoding,
+        emptyResponseCodes: Set<Int>
+    ) async -> Response<String, NetworkingError>
+
+    /// Validates whether the response's status code is within an acceptable range.
+    ///
+    /// This method checks if the provided `HTTPURLResponse` contains a status code that is considered valid.
+    /// If the status code is not within the allowed range, a `NetworkingError.responseValidationFailed` is thrown.
+    ///
+    /// - Parameter acceptableStatusCodes: A sequence of acceptable HTTP status codes.
+    /// - Throws: A `NetworkingError` if the status code is not within the acceptable range.
+    func validate() -> Self
+
+    /// Adds a custom validation step to the request.
+    ///
+    /// This method allows defining a custom validation logic for the response,
+    /// ensuring the response meets specific criteria before being considered successful.
+    ///
+    /// - Parameter validator: A closure that validates the `URLRequest`, `HTTPURLResponse`, and response `Data`.
+    /// - Returns: The current instance of `Self` to allow method chaining.
+    /// - Throws: A `NetworkingError.responseValidationFailed` if the validation fails.
+    /// - Returns: The current `DataRequest` instance.
+    ///
+    /// ### Example Usage:
+    /// ```swift
+    /// request.validate { request, response, data in
+    ///     guard response.statusCode == 200 else {
+    ///         throw NetworkingError(kind: .responseValidationFailed, failureReason: "Unexpected status code")
+    ///     }
+    /// }
+    /// ```
+    @discardableResult
+    func validate(_ validator: @escaping Validation) -> Self
+
+    /// Validates whether the response's status code is within an acceptable range.
+    ///
+    /// This method checks if the provided `HTTPURLResponse` contains a status code that is considered valid.
+    /// If the status code is not within the allowed range, a `NetworkingError.responseValidationFailed` is thrown.
+    ///
+    /// - Parameter acceptableStatusCodes: A sequence of acceptable HTTP status codes.
+    /// - Throws: A `NetworkingError` if the status code is not within the acceptable range.
+    /// - Returns: The current `DataRequest` instance.
+    ///
+    /// ### Example Usage:
+    /// ```swift
+    /// request.validate(acceptableStatusCodes: [200])
+    /// ```
+    @discardableResult
+    func validate<S: Sequence>(acceptableStatusCodes: S) -> Self where S: Sendable, S.Iterator.Element == Int
+}
+
+/// A specialized type of `DataRequest` that represents an upload operation.
+public protocol UploadRequest: DataRequest {}
+
+extension DataRequest {
+    /// Serializes the response into a `Decodable` type asynchronously.
+    ///
+    /// This method allows decoding the response data into a `Decodable` object of type `Value`.
+    /// It internally uses `DecodableResponseSerializer` to handle serialization.
+    ///
+    /// - Parameters:
+    ///   - type: The `Decodable` type to which the response should be serialized.
+    ///   - decoder: The `JSONDecoder` used for decoding (default: `.init()`).
+    ///   - emptyResponseCodes: HTTP status codes that indicate an empty response body (default: `[204, 205]`).
+    /// - Returns: An `Response<Value, NetworkingError>` that provides the serialized response asynchronously.
+    ///
+    /// ### Example Usage:
+    /// ```swift
+    /// let task: Response<User, NetworkingError> = request.serializing(User.self)
+    /// let user = try await task.value
+    /// ```
+    public func serializing<Value: Decodable>(
+        _ type: Value.Type,
+        decoder: JSONDecoder = JSONDecoder(),
+        emptyResponseCodes: Set<Int> = DecodableResponseSerializer<Value>.emptyResponseCodes
+    ) async -> Response<Value, NetworkingError> where Value: Sendable {
+        await serializing(Value.self, decoder: JSONDecoder(), emptyResponseCodes: emptyResponseCodes)
+    }
+
+    /// Serializes the response as raw `Data` asynchronously.
+    ///
+    /// This method allows retrieving the response body as raw `Data`, handling empty responses
+    /// based on predefined HTTP status codes.
+    ///
+    /// - Parameter emptyResponseCodes: HTTP status codes that indicate an empty response body (default: `[204, 205]`).
+    /// - Returns: An `Response<Value, NetworkingError>` that provides the raw response asynchronously.
+    ///
+    /// ### Example Usage:
+    /// ```swift
+    /// let task = request.serializingData()
+    /// let data = try await task.value
+    /// ```
+    public func serializingData(
+        emptyResponseCodes: Set<Int> = DataResponseSerializer.emptyResponseCodes
+    ) async -> Response<Data, NetworkingError> {
+        await serializingData(emptyResponseCodes: emptyResponseCodes)
+    }
+
+    /// Serializes the response as a `String` asynchronously.
+    ///
+    /// This method retrieves the response body as a `String`, using the specified encoding.
+    /// It handles empty responses based on predefined HTTP status codes.
+    ///
+    /// - Parameters:
+    ///   - queue: The `DispatchQueue` on which serialization occurs (default: `.main`).
+    ///   - encoding: The `String.Encoding` used for decoding the response (default: `.utf8`).
+    ///   - emptyResponseCodes: HTTP status codes that indicate an empty response body (default: `[204, 205]`).
+    /// - Returns: An `Response<Value, NetworkingError>` that provides the response as a `String` asynchronously.
+    ///
+    /// ### Example Usage:
+    /// ```swift
+    /// let task = request.serializingString()
+    /// let text = try await task.value
+    /// ```
+    public func serializingString(
+        queue: DispatchQueue = .main,
+        encoding: String.Encoding = .utf8,
+        emptyResponseCodes: Set<Int> = DataResponseSerializer.emptyResponseCodes
+    ) async -> Response<String, NetworkingError> {
+        await serializingString(queue: queue, encoding: encoding, emptyResponseCodes: emptyResponseCodes)
+    }
+}

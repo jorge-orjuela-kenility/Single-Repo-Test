@@ -1,0 +1,103 @@
+name: Camera Snapshot Tests (PR)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  camera-snapshots:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Camera changes
+        id: camera_changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            camera:
+              - 'Libraries/Plugins/Camera/Sources/**'
+              - 'Libraries/Plugins/Camera/SnapshotTests/**'
+
+      - name: Log change detection result
+        run: |
+          if [[ "${{ steps.camera_changes.outputs.camera }}" == "true" ]]; then
+            echo "Camera source changes detected. Snapshot tests will run."
+          else
+            echo "No Camera changes detected. Snapshot tests will be skipped."
+          fi
+
+      - name: Install XcodeGen
+        if: steps.camera_changes.outputs.camera == 'true'
+        run: |
+          brew update
+          brew install xcodegen
+    
+      - name: Generate Xcode project
+        if: steps.camera_changes.outputs.camera == 'true'
+        run: |
+          make genbuild
+
+      - name: Set up Xcode
+        if: steps.camera_changes.outputs.camera == 'true'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'
+
+      - name: Boot deterministic simulator
+        if: steps.camera_changes.outputs.camera == 'true'
+        run: |
+          xcrun simctl shutdown all || true
+          xcrun simctl erase all
+          xcrun simctl list runtimes
+          xcrun simctl list devicetypes
+
+          # Runtime identifier
+          IOS_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-18-5"
+
+          # iPhone
+          IPHONE_ID=$(xcrun simctl create \
+            "iPhone 16 Pro Snapshot" \
+            "iPhone 16 Pro" \
+            "$IOS_RUNTIME")
+
+          # iPad
+          IPAD_ID=$(xcrun simctl create \
+            "iPad Pro 13-inch (M4) Snapshot" \
+            "iPad Pro 13-inch (M4)" \
+            "$IOS_RUNTIME")
+
+          for DEVICE_ID in $IPHONE_ID $IPAD_ID; do
+            xcrun simctl boot "$DEVICE_ID"
+            xcrun simctl bootstatus "$DEVICE_ID" -b
+
+            xcrun simctl spawn "$DEVICE_ID" defaults write -g AppleLocale en_US
+            xcrun simctl spawn "$DEVICE_ID" defaults write -g AppleLanguages '(en)'
+            xcrun simctl spawn "$DEVICE_ID" defaults write -g AppleInterfaceStyle Light
+          done
+
+      - name: Run Camera snapshot tests (iPhone)
+        if: steps.camera_changes.outputs.camera == 'true'
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project TruvideoSDK.xcodeproj \
+            -scheme TruvideoSdkCameraSnapshotTests \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro Snapshot,OS=18.5' \
+            -derivedDataPath DerivedData/iPhone \
+            test | xcpretty
+
+      - name: Run Camera snapshot tests (iPad)
+        if: steps.camera_changes.outputs.camera == 'true'
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project TruvideoSDK.xcodeproj \
+            -scheme TruvideoSdkCameraSnapshotTests \
+            -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4) Snapshot,OS=18.5' \
+            -derivedDataPath DerivedData/iPad \
+            test | xcpretty

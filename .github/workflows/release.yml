@@ -1,0 +1,628 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - 'release/*'
+  workflow_dispatch:
+    inputs:
+      cut:
+        description: "Release type"
+        type: choice
+        options: [rc, prod]
+        required: false      
+      dry_run:
+        description: "Preview only"
+        type: boolean
+        default: false
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: cut-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cut_release:
+    if: |
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'workflow_dispatch')
+    runs-on: macos-15
+
+    env:      
+      LBL_RC: cut-rc
+
+      CHANNEL_PLIST_KEY: 'TRVReleaseChannel'
+      GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_EXTERNAL_PAT }}
+
+      - name: Tooling / Git identity
+        run: |
+          brew update >/dev/null
+          brew install jq xcodegen >/dev/null || true
+          brew install swiftlint
+          brew install swiftformat
+          git config user.name  "truvideo[bot]"
+          git config user.email "truvideo[bot]@users.noreply.github.com"
+
+      - name: Clone remote repository (external token)
+        run: |
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch origin --tags
+      - name: Validate release policy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          LABELS="${{ join(github.event.pull_request.labels.*.name, ' ') }}"
+
+          echo "Base branch: $BASE_BRANCH"
+          echo "Labels: $LABELS"
+
+          has_rc=false
+          [[ "$LABELS" =~ (^|[[:space:]])cut-rc($|[[:space:]]) ]] && has_rc=true
+
+          if [[ "$BASE_BRANCH" == "release/next" ]]; then
+            if ! $has_rc; then
+              echo "::notice::No cut-rc label found; skipping release"
+              exit 0
+            fi
+          else
+            echo "::notice::Branch $BASE_BRANCH does not trigger releases (only release/next with cut-rc does)"
+            exit 0
+          fi
+
+          echo "Release policy validated"    
+      - name: Resolve cut type and frameworks (manual > labels > paths)
+        id: scope
+        shell: bash
+        run: |
+          set -eo pipefail
+
+          # Use runtime env and the event JSON rather than YAML expansions
+          EVENT_FILE="${GITHUB_EVENT_PATH:-}"
+          EVENT_NAME="${GITHUB_EVENT_NAME:-}"
+
+          # Extract labels safely (one per line); only when PR event has labels
+          labels=""
+          if [ -n "$EVENT_FILE" ]; then
+            labels="$(jq -r '.pull_request.labels[].name // empty' "$EVENT_FILE" 2>/dev/null | sed '/^\s*$/d' || true)"
+          fi
+
+          # Trim safely removing double spaces, leading/trailing
+          safe_trim() {
+            printf "%s" "$1" \
+              | tr '\t' ' ' \
+              | tr -s ' ' \
+              | sed 's/^ *//; s/ *$//'
+          }
+          
+          cut=""
+
+          # read inputs safely from event json if workflow_dispatch
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$EVENT_FILE" ]; then
+            cut="$(jq -r '.inputs.cut // empty' "$EVENT_FILE" 2>/dev/null || true)"
+          fi
+
+          if [ -z "$cut" ]; then            
+            if grep -Fxq "${LBL_RC}" <<< "$labels"; then
+              cut="rc"
+            fi
+          fi
+
+          allow=""
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$EVENT_FILE" ]; then
+            frameworks="$(jq -r '.inputs.frameworks // empty' "$EVENT_FILE" 2>/dev/null || true)"
+            if [ "$frameworks" = "all" ] || [ -z "$frameworks" ]; then
+              allow="$(grep -B 1 'type: framework' "$GITHUB_WORKSPACE/project.yml" 2>/dev/null | grep -E '^  [A-Za-z0-9]+:' | sed 's/^  //; s/:$//' | tr '\n' ' ' | sed 's/ $//')"
+            else
+              allow="$frameworks"
+            fi
+          else
+            allow="$(grep -B 1 'type: framework' "$GITHUB_WORKSPACE/project.yml" 2>/dev/null | grep -E '^  [A-Za-z0-9]+:' | sed 's/^  //; s/:$//' | tr '\n' ' ' | sed 's/ $//')"
+          fi
+
+          allow="$(safe_trim "$allow")"
+          final="$allow"
+
+          # dry run input (safe read)
+          dry="false"
+          if [ -n "$EVENT_FILE" ]; then
+            dry="$(jq -r '.inputs.dry_run // "false"' "$EVENT_FILE" 2>/dev/null || true)"
+          fi
+          
+          echo "cut=$cut" >> "$GITHUB_OUTPUT"
+          echo "aff=$final" >> "$GITHUB_OUTPUT"
+          echo "dry=$dry" >> "$GITHUB_OUTPUT"
+
+          # Also persist to a file so subsequent steps can source it without YAML interpolation
+          SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
+          # printf 'CUT=%s\nAFF=%s\nDRY=%s\n' "$cut" "$final" "$dry" > "$SCOPE_FILE"
+          echo "CUT=$cut" > "$SCOPE_FILE"
+          echo "AFF=\"$final\"" >> "$SCOPE_FILE"
+          echo "DRY=$dry" >> "$SCOPE_FILE"
+          echo "Wrote scope to $SCOPE_FILE"
+      - name: Reset SwiftPM caches
+        run: |
+            rm -rf ~/Library/Caches/org.swift.swiftpm
+
+      - name: Generate Xcode project
+        run: |
+          set -eo pipefail
+          # load scope vars produced by the previous step
+          SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
+          if [ ! -f "$SCOPE_FILE" ]; then
+            echo "Scope file not found; exiting (nothing to cut)."
+            exit 0
+          fi
+          # shellcheck source=/dev/null
+          source "$SCOPE_FILE"
+          if [ -z "${AFF:-}" ]; then
+            echo "AFF is empty; skipping generate Xcode project."
+            exit 0
+          fi
+
+          make genbuild
+          if [ -f "TruvideoSDK.xcodeproj/project.pbxproj" ]; then
+            proj="TruvideoSDK.xcodeproj"
+          else
+            proj=$(ls -1 *.xcodeproj 2>/dev/null | head -n1 || true)
+          fi
+          if [ -z "$proj" ]; then
+            echo "No .xcodeproj found after make genbuild"; exit 1
+          fi
+          echo "PROJECT=$proj" >> $GITHUB_ENV
+          echo "Using PROJECT=$proj"
+
+      - name: Compute versions, update Info.plist, generate Version.swift, tag & release
+        shell: bash
+        env:          
+          GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+          SDK_NON_PROD_KEY: ${{ secrets.SDK_NON_PROD_KEY }}
+          SDK_PROD_KEY: ${{ secrets.SDK_PROD_KEY }}
+        run: |
+          set -eo pipefail
+          trap 'ret=$?; echo "ERROR: command failed with exit $ret: ${BASH_COMMAND} at line ${LINENO}"; exit $ret' ERR
+
+
+          # load scope vars produced by the scope step
+          SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
+          if [ ! -f "$SCOPE_FILE" ]; then
+            echo "Scope file not found; exiting (nothing to cut)."
+            exit 0
+          fi
+          # shellcheck source=/dev/null
+          source "$SCOPE_FILE"
+
+          # Only continue if both CUT and AFF are set
+          if [ -z "${CUT:-}" ] || [ -z "${AFF:-}" ]; then
+            echo "CUT or AFF empty; nothing to do."
+            exit 0
+          fi
+
+          cut="$CUT"
+          dry="$DRY"
+
+          BRANCH_REF="$(git rev-parse HEAD)"
+
+          find_plists () { git ls-files "$1" | grep -E '/Info\.plist$' || true; }
+          read_short_ver () { /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$1" 2>/dev/null || true; }
+          write_short_ver () { /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $2" "$1" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $2" "$1"; }
+          write_build_num () { /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $2" "$1" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $2" "$1"; }
+          write_channel_key () {
+            local plist="$1" val="$2" key="${CHANNEL_PLIST_KEY}"
+            /usr/libexec/PlistBuddy -c "Set :$key $val" "$plist" \
+              || /usr/libexec/PlistBuddy -c "Add :$key string $val" "$plist"
+          }
+
+          bump_from_commits () {
+            local last_base_version="$1" range="$2" bump="patch"
+            if git log --format=%B $range | grep -Eq 'BREAKING CHANGE|!:'; then bump="major"
+            elif git log --format=%s $range | grep -Eq '^feat(\(|:)|^feat!'; then bump="minor"
+            elif git log --format=%s $range | grep -Eq '^fix(\(|:)|^fix!|^perf(\(|:)|^perf!'; then bump="patch"
+            else bump="patch"; fi
+            if [ -z "$last_base_version" ]; then echo "0.1.0"; return; fi
+            base="${last_base_version}"
+            IFS='.' read -r major minor patch <<< "$base"
+            case "$bump" in
+              major) major=$((major+1)); minor=0; patch=0 ;;
+              minor) minor=$((minor+1)); patch=0 ;;
+              patch) patch=$((patch+1)) ;;
+            esac
+            echo "${major}.${minor}.${patch}"
+            echo "[DEBUG bump] last_base_version=$1" >&2
+            echo "[DEBUG bump] range=$2" >&2
+            git log --format='%h %s' $2 >&2
+          }
+          
+          rc_build_for_base_all() {
+            local base="$1" max=0 n
+            while read -r t; do
+              [ -z "$t" ] && continue
+              n="${t##*RC-}"
+              [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt "$max" ] && max="$n"
+            done < <( git tag -l "${base}.RC-*" 2>/dev/null )
+            echo $((max + 1))
+          }
+
+          gen_version_swift () {
+            local destdir="$1" full="$2" channel="$3" build="$4" key="$5"
+            mkdir -p "$destdir"
+            local vfile="$destdir/Version.swift"
+
+            if [ "$key" = "TruvideoSdk" ]; then
+              local secret=""
+              case "$channel" in
+                RC)   secret="${SDK_NON_PROD_KEY:-}" ;;
+                PROD) secret="${SDK_PROD_KEY:-}" ;;
+                *)
+                  echo "Unknown channel '$channel' for core SDK"
+                  exit 1
+                  ;;
+              esac
+              if [ -z "$secret" ]; then
+                echo "CORE SDK secret missing for channel '$channel'"
+                exit 1
+              fi
+            fi
+
+            if [ -f "$vfile" ]; then              
+              sed -i '' "s/SDKVersionNumber = \"[^\"]*\"/SDKVersionNumber = \"$full\"/" "$vfile"
+              sed -i '' "s/SDKEnvironment = \"[^\"]*\"/SDKEnvironment = \"$channel\"/" "$vfile"
+              sed -i '' "s/SDKBuildNumber = \"[^\"]*\"/SDKBuildNumber = \"$build\"/" "$vfile"
+              if [ "$key" = "TruvideoSdk" ] && [ -n "$secret" ]; then
+                sed -i '' "s/SDKSecretKey = \"[^\"]*\"/SDKSecretKey = \"$secret\"/" "$vfile"
+              fi
+            else
+              # Create new file (e.g. new framework) — match repo style
+              {
+                echo "//"
+                echo "// Copyright © $(date +%Y) TruVideo. All rights reserved."
+                echo "//"
+                echo ""
+                echo "// Generated by CI – do not edit."
+                echo ""
+                echo "let SDKVersionNumber = \"$full\""
+                echo "let SDKEnvironment = \"$channel\""
+                echo "let SDKBuildNumber = \"$build\""
+                [ "$key" = "TruvideoSdk" ] && [ -n "${secret:-}" ] && echo "let SDKSecretKey = \"$secret\""
+              } > "$vfile"
+            fi
+          }
+
+          clean_changelog_subject () {
+          local s="$1"
+
+        
+          s="$(echo "$s" | sed -E 's/^(feat|fix|perf|refactor|docs|test|build|ci|chore)(\([^)]+\))?(!)?: *//')"
+
+        
+          s="$(echo "$s" | sed -E 's/^[A-Z]+-[0-9]+: *//')"
+          s="$(echo "$s" | sed -E 's/[A-Z]+-[0-9]+//g')"
+ 
+          s="$(echo "$s" | sed -E 's/ *\(#?[0-9]+\)$//')"
+
+          # 4. Trim spaces (including multiple spaces left after Jira removal)
+          s="$(echo "$s" | sed -E 's/^ +| +$//g' | tr -s ' ')"
+
+          # 5. Capitalize first letter (optional but recommended)
+          s="$(echo "$s" | sed -E 's/^./\U&/')"
+
+          echo "$s"
+          }
+
+          gen_changelog_md () {
+            local range="$1" path="$2"
+            local feats="" fixes="" perfs="" refacs="" docs="" tests="" build="" ci="" chores="" breaks=""
+            while IFS= read -r s; do
+              [ -z "$s" ] && continue
+
+              clean="$(clean_changelog_subject "$s")"
+
+              [[ "$s" =~ BREAKING\ CHANGE|!\: ]] && breaks="${breaks}"$'\n- '"$clean"
+
+              if   [[ "$s" =~ ^feat(\(|:|\!) ]];      then feats="${feats}"$'\n- '"$clean"
+              elif [[ "$s" =~ ^fix(\(|:|\!) ]];       then fixes="${fixes}"$'\n- '"$clean"
+              elif [[ "$s" =~ ^perf(\(|:|\!) ]];      then perfs="${perfs}"$'\n- '"$clean"
+              elif [[ "$s" =~ ^refactor(\(|:|\!) ]];  then refacs="${refacs}"$'\n- '"$clean"
+              elif [[ "$s" =~ ^docs(\(|:|\!) ]];      then docs="${docs}"$'\n- '"$clean"
+              elif [[ "$s" =~ ^test(\(|:|\!) ]];      then tests="${tests}"$'\n- '"$clean"
+              elif [[ "$s" =~ ^build(\(|:|\!) ]];     then build="${build}"$'\n- '"$clean"
+              elif [[ "$s" =~ ^ci(\(|:|\!) ]];        then ci="${ci}"$'\n- '"$clean"
+              elif [[ "$s" =~ ^chore(\(|:|\!) ]];     then chores="${chores}"$'\n- '"$clean"
+              fi
+            done < <(git log --pretty=format:'%s' $range -- "$path" || true)
+            {
+              echo "## Changes"
+              [ -n "$breaks" ] && { echo; echo "### ⚠️ Breaking Changes"; echo "$breaks"; }
+              [ -n "$feats"  ] && { echo; echo "### ✨ Features";        echo "$feats"; }
+              [ -n "$fixes"  ] && { echo; echo "### 🐛 Fixes";           echo "$fixes"; }
+              [ -n "$perfs"  ] && { echo; echo "### 🚀 Performance";     echo "$perfs"; }
+              [ -n "$refacs" ] && { echo; echo "### 🧹 Refactors";       echo "$refacs"; }
+              [ -n "$docs"   ] && { echo; echo "### 📝 Docs";            echo "$docs"; }
+              [ -n "$tests"  ] && { echo; echo "### ✅ Tests";           echo "$tests"; }
+              [ -n "$build"  ] && { echo; echo "### 🧱 Build";           echo "$build"; }
+              [ -n "$ci"     ] && { echo; echo "### ⚙️ CI";              echo "$ci"; }
+              [ -n "$chores" ] && { echo; echo "### 🧰 Chore";           echo "$chores"; }
+            } | sed '/^$/N;/^\n$/D' || true
+          }
+
+          cut_for () {
+            local key="$1" cut_type="$2" phase="${3:-release}" prefix path vdir prerelease title
+
+            local ORIGINAL_DIR
+            ORIGINAL_DIR="$(pwd)"
+
+            base_ver="$SHARED_BASE_VER"
+            full="$SHARED_FULL"
+            channel="$SHARED_CHANNEL"
+            build_num="$SHARED_BUILD_NUM"
+            range="$SHARED_RANGE"
+
+            prefix="$key"
+            case "$key" in
+              DI)
+                path="Libraries/Foundation/Core/DI"
+                vdir="Libraries/Foundation/Core/DI/Sources"
+                ;;
+              TruVideoRuntime)
+                path="Libraries/Foundation/Core/Runtime"
+                vdir="Libraries/Foundation/Core/Runtime/Sources"
+                ;;
+              StorageKit)
+                path="Libraries/Foundation/Extended/Storage"
+                vdir="Libraries/Foundation/Extended/Storage/Sources"
+                ;;
+              TruVideoFoundation)
+                path="Libraries/Foundation/Core/Foundation"
+                vdir="Libraries/Foundation/Core/Foundation/Sources"
+                ;;
+              Networking)
+                path="Libraries/Internal/Core/Networking"
+                vdir="Libraries/Internal/Core/Networking/Sources"
+                ;;
+              TruVideoApi)
+                path="Libraries/Internal/Extended/TruVideoApi"
+                vdir="Libraries/Internal/Extended/TruVideoApi/Sources"
+                ;;
+              TruvideoSdk)
+                path="Libraries/External/Extended/App"
+                vdir="Libraries/External/Extended/App/Sources"
+                ;;
+              TruVideoMediaUpload)
+                path="Libraries/Plugins/Core/MediaUpload"
+                vdir="Libraries/Plugins/Core/MediaUpload/Sources"
+                ;;
+              TruvideoSdkCamera)
+                path="Libraries/Plugins/External/Camera"
+                vdir="Libraries/Plugins/External/Camera/Sources"
+                ;;
+              TruvideoSdkMedia)
+                path="Libraries/Plugins/External/Media"
+                vdir="Libraries/Plugins/External/Media/Sources"
+                ;;
+              *)
+                echo "Error: Unknown framework key '$key' (not in project.yml type: framework list?)"
+                exit 1
+                ;;
+            esac
+
+            if [ "$cut_type" = "rc" ]; then
+              prerelease="true"
+              title="Release Candidate for **$prefix $base_ver**."
+            else
+              prerelease="false"
+              title="Production release for **$prefix $base_ver**."
+            fi
+
+            while read -r plist; do
+              [ -z "$plist" ] && continue
+              cur_short="$(read_short_ver "$plist")"
+              if [ "$cur_short" != "$base_ver" ]; then write_short_ver "$plist" "$base_ver"; fi
+              write_build_num "$plist" "$build_num"
+              write_channel_key "$plist" "$channel"
+            done < <(find_plists "$path")
+
+            gen_version_swift "$vdir" "$full" "$channel" "$build_num" "$key"
+
+            git add "$path" || true
+            if [ -f "$vdir/Version.swift" ] && ! git check-ignore -q "$vdir/Version.swift"; then
+              git add "$vdir/Version.swift"
+            fi
+
+            if [ "$phase" = "apply" ]; then
+              cd "$ORIGINAL_DIR" || true
+              return 0
+            fi
+
+            cd "$ORIGINAL_DIR" || true
+            return 0
+          }
+
+          IFS=', ' read -r -a CUT_ARR <<< "${cut}"
+          for cut_type in "${CUT_ARR[@]}"; do
+            last_base_version=$(
+              git tag -l 2>/dev/null \
+              | sed 's/\.RC-[0-9]*$//' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -n1
+            )
+            latest_tag=$( git for-each-ref --sort=-creatordate refs/tags --format='%(refname:short)' 2>/dev/null \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | head -n1 )
+            since_ref=""
+            [ -n "$latest_tag" ] && since_ref="$(git rev-list -n1 "$latest_tag")"
+            SHARED_RANGE="${since_ref:+${since_ref}..}HEAD"
+
+            if [ "$cut_type" = "rc" ]; then              
+              SHARED_CHANNEL="RC"
+            
+              if [[ "$latest_tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                SHARED_BASE_VER="$(bump_from_commits "$last_base_version" "${SHARED_RANGE:-HEAD}")"
+                SHARED_BUILD_NUM="1"
+                SHARED_FULL="${SHARED_BASE_VER}.RC-${SHARED_BUILD_NUM}"
+              else                
+                SHARED_BASE_VER="${last_base_version:-0.1.0}"
+                SHARED_BUILD_NUM="$(rc_build_for_base_all "$SHARED_BASE_VER")"
+                SHARED_FULL="${SHARED_BASE_VER}.RC-${SHARED_BUILD_NUM}"
+              fi
+            else              
+              if [[ "$latest_tag" =~ \.RC-[0-9]+$ ]]; then
+                SHARED_BASE_VER="${last_base_version:-0.1.0}"
+                SHARED_FULL="${SHARED_BASE_VER}"
+              else
+                SHARED_BASE_VER="$(bump_from_commits "$last_base_version" "${SHARED_RANGE:-HEAD}")"
+                SHARED_FULL="${SHARED_BASE_VER}"
+              fi
+              SHARED_CHANNEL="PROD"
+              SHARED_BUILD_NUM="1"
+            fi
+
+            echo "Single track version: $SHARED_FULL (${SHARED_CHANNEL}, build ${SHARED_BUILD_NUM})"
+            
+            SHARED_CHANGELOG="$(gen_changelog_md "$SHARED_RANGE" ".")"
+
+            IFS=' ' read -r -a AFF_ARR <<< "${AFF}"
+            for s in "${AFF_ARR[@]}"; do
+              cut_for "$s" "$cut_type" "apply"
+            done
+ 
+            if [ "$dry" != "true" ] && ! git diff --cached --quiet; then
+              git commit -m "chore(release): bump to ${SHARED_FULL} (${SHARED_CHANNEL})"
+            fi
+            
+            RELEASE_TAG="${SHARED_FULL}"
+            if [ "$dry" != "true" ]; then
+              if git tag -l | grep -q "^${RELEASE_TAG}$"; then
+                echo "⚠️ Tag '${RELEASE_TAG}' already exists. Skipping."
+              else
+                echo "➡️ Creating release tag '${RELEASE_TAG}'..."
+                git tag "${RELEASE_TAG}"
+                git push origin "refs/tags/${RELEASE_TAG}"
+                echo "✅ Tag '${RELEASE_TAG}' pushed."
+              fi
+
+              # Build all XCFrameworks once via Makefile (output: DerivedData/XCFrameworks/)
+              echo "== Building all XCFrameworks (make xcframeworks) =="
+              cd "$GITHUB_WORKSPACE" || exit 1
+              make xcframeworks
+            fi
+
+            if [ "$dry" = "true" ]; then
+              echo "[DRY RUN] Would zip all frameworks, update Package.swift, create release, upload zips."
+            else
+              EXTERNAL_REPO="Truvideo/truvideo-sdk-ios-core"
+              VERSION="$SHARED_FULL"
+              prerelease="false"
+              [ "$cut_type" = "rc" ] && prerelease="true"
+              title="Release for **$SHARED_FULL** (${SHARED_CHANNEL})."
+              body_header=$(printf '%s\n' \
+                "$title" \
+                "" \
+                "- **Version**: $SHARED_FULL" \
+                "- **Channel**: $SHARED_CHANNEL" \
+                "" \
+                "%CHANGELOG%")
+              body="${body_header//%CHANGELOG%/$SHARED_CHANGELOG}"
+
+              PACKAGE_FRAMEWORKS=( TruvideoSdk TruvideoSdkCamera TruvideoSdkMedia DI Networking StorageKit TruVideoApi TruVideoFoundation TruVideoMediaUpload TruVideoRuntime )
+              XC_BASE="$GITHUB_WORKSPACE/DerivedData/XCFrameworks"
+              mkdir -p "$GITHUB_WORKSPACE/release-artifacts"
+
+              for key in "${PACKAGE_FRAMEWORKS[@]}"; do
+                if [ ! -d "${XC_BASE}/${key}.xcframework" ]; then
+                  echo "ERROR: xcframework not found: ${XC_BASE}/${key}.xcframework"
+                  exit 1
+                fi
+                ZIP_NAME="${key}.xcframework.zip"
+                rm -f "/tmp/${ZIP_NAME}"
+                (cd "$(dirname "${XC_BASE}/${key}.xcframework")" && zip -r "/tmp/${ZIP_NAME}" "$(basename "${XC_BASE}/${key}.xcframework")")
+                chk=$(swift package compute-checksum "/tmp/${ZIP_NAME}")
+                if [ -z "$chk" ]; then echo "ERROR: checksum empty for $ZIP_NAME"; exit 1; fi
+                declare "CHECKSUM_${key}=${chk}"
+                cp "/tmp/${ZIP_NAME}" "$GITHUB_WORKSPACE/release-artifacts/${ZIP_NAME}"
+                echo "✅ $ZIP_NAME checksum: $chk"
+              done
+
+              echo "== Cloning ${EXTERNAL_REPO} and updating Package.swift =="
+              rm -rf /tmp/spm || true
+              git clone "https://${GH_TOKEN}@github.com/${EXTERNAL_REPO}.git" /tmp/spm
+              cd /tmp/spm
+              git config user.name "truvideo[bot]"
+              git config user.email "truvideo[bot]@users.noreply.github.com"
+
+              # Modify existing Package.swift: replace <version> and each binary target checksum (in order)
+              PACKAGE_FILE="Package.swift"
+              if [ ! -f "$PACKAGE_FILE" ]; then
+                echo "ERROR: Package.swift not found in ${EXTERNAL_REPO}"
+                exit 1
+              fi
+              sed -i '' "s|<version>|${VERSION}|g" "$PACKAGE_FILE"
+              for key in "${PACKAGE_FRAMEWORKS[@]}"; do
+                var="CHECKSUM_${key}"
+                val="${!var}"
+                sed -i '' "0,/checksum: \"[^\"]*\"/s/checksum: \"[^\"]*\"/checksum: \"${val}\"/" "$PACKAGE_FILE"
+              done
+
+              if git show-ref --verify --quiet "refs/heads/$VERSION"; then
+                git checkout "$VERSION"
+              else
+                git checkout -b "$VERSION"
+              fi
+              git add "$PACKAGE_FILE"
+              if ! git diff --cached --quiet; then
+                git commit -m "SPM: Update Package.swift for $VERSION"
+              fi
+              git push "https://${GH_TOKEN}@github.com/${EXTERNAL_REPO}.git" "refs/heads/${VERSION}" || true
+
+              echo "== Creating and pushing tag ${VERSION} =="
+              if git tag -l | grep -q "^${VERSION}$"; then
+                echo "⚠️ Tag ${VERSION} already exists. Skipping."
+              else
+                git tag "${VERSION}"
+                git push "https://${GH_TOKEN}@github.com/${EXTERNAL_REPO}.git" "refs/tags/${VERSION}"
+                echo "✅ Tag ${VERSION} pushed."
+              fi
+
+              if gh release view "${VERSION}" --repo "${EXTERNAL_REPO}" >/dev/null 2>&1; then
+                echo "✅ Release ${VERSION} already exists on ${EXTERNAL_REPO}."
+              else
+                echo "➡️ Creating release ${VERSION} on ${EXTERNAL_REPO}..."
+                gh api -X POST "repos/${EXTERNAL_REPO}/releases" \
+                  -f tag_name="${VERSION}" \
+                  -f name="${VERSION}" \
+                  -f body="$body" \
+                  -F prerelease="$prerelease" || true
+              fi
+
+              echo "== Uploading all XCFramework zips to release =="
+              for key in "${PACKAGE_FRAMEWORKS[@]}"; do
+                ZIP_NAME="${key}.xcframework.zip"
+                if gh release upload "${VERSION}" "/tmp/${ZIP_NAME}" --repo "${EXTERNAL_REPO}" --clobber; then
+                  echo "✅ Uploaded ${ZIP_NAME}"
+                else
+                  echo "⚠️ WARN: failed to upload ${ZIP_NAME}"
+                fi
+              done
+
+              cd "$GITHUB_WORKSPACE" || true
+            fi
+          done
+
+      - name: Upload XCFramework zips
+        if: success() && hashFiles('release-artifacts/*.zip') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcframeworks
+          path: release-artifacts/

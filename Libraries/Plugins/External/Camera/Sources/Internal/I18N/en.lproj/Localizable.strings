@@ -1,0 +1,101 @@
+// A
+"Active" = "Active";
+"AnotherAppIsUsingMicrophone" = "Recording is not available because another app is using the microphone. Please close it and try again.";
+"Attempts" = "Attempts";
+
+// B
+// C
+"Cancel" = "Cancel";
+"CancelAdvise" = "This action cannot be undone.";
+"CancelMessage" = "Are you sure you want to cancel?";
+"CreationDate" = "Creation Date:";
+"Close" = "Close";
+"Continue" = "Continue";
+
+// D
+"Delete" = "Delete";
+"DiscardMessage" = "Would you like to discard all videos and images?";
+"Discard" = "Discard";
+
+// E
+"Exit" = "Exit";
+"Edit" = "Edit";
+
+// F
+"FailedToSetPreset" = "Failed to set preset. Try a lower resolution or frame rate";
+"FHD" = "FHD";
+
+// G
+// H
+"HD" = "HD";
+
+// I
+"IncludeInReport" = "Include in report";
+"IncludeToReport" = "Include to report";
+"Info" = "Info";
+"IsLibrary" = "Is library";
+
+// J
+// K
+// L
+// M
+"MaxClipDurationReached" = "You’ve reached the video recording time limit.";
+"MaxFileSizeExceeded" = "The uploaded file exceeds the allowable limit of 600MB";
+"MaxNumberOfClipsReached" = "You have reached the maximum number of videos for this session.";
+"MaxNumberOfPicturesReached" = "You have reached the maximum number of pictures for this session.";
+"MediaId" = "MediaId";
+"Metadata" = "Metadata";
+
+// N
+"No" = "No";
+"NoMetadataAdded" = "No metadata added";
+"NoStreamsFound" = "No Streams Found";
+"NoTagsAdded" = "No tags added";
+
+// Ñ
+// O
+"OpenSettings" = "Open Settings";
+
+// P
+"Part" = "Part";
+"Pause" = "Pause";
+"PermissionMessage" = "Allow the App to access your camera and microphone";
+"PermissionDisclaimer" = "This lets you use the camera and microphone to take photos and record videos seamlessly.";
+"PresetNotSupported" = "Preset not supported on this device";
+
+// Q
+// R
+"Reattempts" = "Re-attempts";
+"Resolutions" = "Resolutions";
+"Resume" = "Resume";
+"Retry" = "Retry";
+
+// S
+"SD" = "SD";
+"SignInToContinue" = "Sign in to continue";
+"SignInToUseCamera" = "Sign in to use the camera and microphone to take photos and record videos";
+"StreamDetails" = "Stream Details";
+"StreamTitle" = "Stream Title";
+"Stream" = "Stream:";
+"Status" = "Status:";
+"Stream" = "Stream";
+"Suspend" = "Suspend";
+
+// T
+"Title" = "Title";
+"Tags" = "Tags";
+"TorchNotAvailable" = "Torch is not available on this device";
+
+// U
+"Unknown" = "Unknown";
+"UploadOperations" = "Upload Operations";
+
+// V
+"VideoDurationZero" = "Recording is not available because video duration is set to 0";
+// W
+"WeCouldNotTakeThePhoto" = "We couldn’t take the photo. Please try again.";
+// X
+// Y
+"Yes" = "Yes";
+
+// Z

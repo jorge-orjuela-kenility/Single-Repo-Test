@@ -1,0 +1,243 @@
+//
+// Copyright © 2025 TruVideo. All rights reserved.
+//
+
+import SwiftUI
+
+/// A collapsible zoom factor picker with smooth animations and theme integration.
+///
+/// `ZoomPicker` provides an interactive interface for selecting zoom factors with a collapsible
+/// design that expands to show all available options and collapses to show only the current
+/// selection. It features smooth spring animations and automatically applies theme-based styling.
+///
+/// ## Example Usage
+///
+/// ```swift
+/// @State private var zoomLevel: Double = 1.0
+/// let zoomOptions = [0.5, 1.0, 2.0, 3.0, 5.0]
+///
+/// ZoomPicker(
+///     options: zoomOptions,
+///     selection: $zoomLevel
+/// )
+/// ```
+struct ZoomPicker: View {
+    // MARK: - Environment Properties
+
+    @Environment(\.theme)
+    var theme
+
+    // MARK: - Properties
+
+    /// The available zoom factor options to choose from.
+    let options: [CGFloat]
+
+    /// The transition to apply when collapsing the mask.
+    let transition = AnyTransition.asymmetric(
+        insertion: .opacity.animation(.easeOut(duration: 0.12)),
+        removal: .opacity.animation(.linear(duration: 0))
+    )
+
+    // MARK: - Binding Properties
+
+    /// Optional binding to an external expanded state that can override the local state.
+    ///
+    /// This property allows external views to control the expansion state of this component.
+    /// If provided, it takes precedence over the local `isExpanded` state. If not provided,
+    /// the component uses its own internal expansion state.
+    let isExpandedBinding: Binding<Bool>?
+
+    /// Binding to the currently selected zoom factor.
+    @Binding var selection: CGFloat
+
+    // MARK: - State Properties
+
+    /// Controls whether the picker is in expanded or collapsed state.
+    @State var isExpanded = false
+
+    // MARK: - StateObject Properties
+
+    @StateObject var viewModel = ZoomPickerViewModel()
+
+    // MARK: - Computed Properties
+
+    /// A computed binding that provides unified access to the expansion state.
+    ///
+    /// This computed property creates a binding that automatically handles the relationship
+    /// between the external binding (if provided) and the local expansion state. It ensures
+    /// that changes to the expansion state are properly propagated to the appropriate source,
+    /// whether that's the external binding or the local state.
+    var binding: Binding<Bool> {
+        Binding {
+            isExpandedBinding?.wrappedValue ?? isExpanded
+        } set: { newValue in
+            guard let isExpandedBinding else {
+                isExpanded = newValue
+                return
+            }
+
+            isExpandedBinding.wrappedValue = newValue
+        }
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        let maxSizeForCollapsibleMask = viewModel.maxSizeForCollapsibleMask(isExpanded: binding.wrappedValue)
+        let maxSizeForAnimatableMask = viewModel.maxSizeForAnimatableMask(isExpanded: binding.wrappedValue)
+
+        LayoutThatFits {
+            ForEach(options, id: \.self) { option in
+                Chip(viewModel.format(option), isSelected: selection == option) {
+                    guard binding.wrappedValue else { return }
+
+                    selection = option
+                    withAnimation {
+                        binding.wrappedValue = false
+                    }
+                }
+                .allowsHitTesting(selection != option)
+            }
+        }
+        .opacity(binding.wrappedValue ? 1 : 0)
+        .padding(.horizontal, theme.spacingTheme.sm)
+        .mask(
+            Rectangle()
+                .frame(maxWidth: maxSizeForCollapsibleMask.width, maxHeight: maxSizeForCollapsibleMask.height)
+                .animation(.spring(response: 0.25, dampingFraction: 1.0, blendDuration: 0), value: binding.wrappedValue)
+        )
+        .background(theme.colorScheme.surfaceContainer.opacity(0.4))
+        .mask(
+            RoundedRectangle(cornerRadius: UIDevice.current.isPad ? theme.radiusTheme.x(7) : theme.radiusTheme.xxl)
+                .frame(maxWidth: maxSizeForAnimatableMask.width, maxHeight: maxSizeForAnimatableMask.height)
+                .animation(.interpolatingSpring(mass: 1, stiffness: 200, damping: 22), value: binding.wrappedValue)
+        )
+        .overlay(content: makeSelectedZoomChip)
+        .hidden(options.isEmpty)
+        .environmentObject(viewModel)
+    }
+
+    // MARK: - Initializer
+
+    init(options: [CGFloat], selection: Binding<CGFloat>, isExpanded: Binding<Bool>? = nil) {
+        self._selection = selection
+        self.isExpandedBinding = isExpanded
+        self.options = options
+    }
+
+    // MARK: - Private methods
+
+    private func makeSelectedZoomChip() -> some View {
+        Chip(viewModel.format(selection), isSelected: true) {
+            withAnimation {
+                binding.wrappedValue = true
+            }
+        }
+        .hidden(binding.wrappedValue)
+        .transition(transition)
+    }
+}
+
+private struct Chip: View {
+    // MARK: - Environment Properties
+
+    @Environment(\.theme)
+    var theme
+
+    // MARK: - EnvironmentObject Properties
+
+    @EnvironmentObject var viewModel: ZoomPickerViewModel
+
+    // MARK: - State Properties
+
+    @State var rotationAngle = Angle.degrees(0)
+
+    // MARK: - Properties
+
+    let action: @MainActor () -> Void
+    let isSelected: Bool
+    let label: String
+
+    // MARK: - Computed Properties
+
+    private var foregroundColor: Color {
+        isSelected ? theme.colorScheme.tertiary : theme.colorScheme.onPrimary
+    }
+
+    private var textStyle: TextStyle {
+        UIDevice.current.isPad ? theme.textTheme.title3 : theme.textTheme.footnote
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text(label)
+
+            Text("×")
+        }
+        .textStyle(textStyle.copyWith(color: foregroundColor))
+        .rotationEffect(rotationAngle)
+        .frame(width: theme.sizeTheme.x(11), height: theme.sizeTheme.x(11))
+        .monospacedDigit()
+        .onTapGesture(perform: action)
+        .onAppear {
+            rotationAngle = viewModel.rotationAngle
+        }
+        .onChange(of: viewModel.rotationAngle) { rotationAngle in
+            withAnimation(.spring(duration: 0.3)) {
+                self.rotationAngle = rotationAngle
+            }
+
+            if viewModel.deviceOrientation.orientation == .portrait {
+                self.rotationAngle = .degrees(0)
+            }
+        }
+    }
+
+    // MARK: - Initializer
+
+    init(_ label: String, isSelected: Bool = false, action: @escaping @MainActor () -> Void) {
+        self.action = action
+        self.isSelected = isSelected
+        self.label = label
+    }
+}
+
+private struct LayoutThatFits<Content: View>: View {
+    // MARK: - Environment Properties
+
+    @Environment(\.theme)
+    var theme
+
+    // MARK: - EnvironmentObject Properties
+
+    @EnvironmentObject var viewModel: ZoomPickerViewModel
+
+    // MARK: - Properties
+
+    let content: @MainActor () -> Content
+
+    // MARK: - Computed Properties
+
+    var isVLayout: Bool {
+        let isLandscape = viewModel.deviceOrientation.orientation.isLandscape
+
+        return (isLandscape && viewModel.deviceOrientation.source == .system) || UIDevice.current.isPad
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        if isVLayout {
+            VStack(spacing: theme.spacingTheme.sm) {
+                content()
+            }
+        } else {
+            HStack(spacing: theme.spacingTheme.sm) {
+                content()
+            }
+            .rotationEffect(viewModel.collapsibleAngle)
+        }
+    }
+}
