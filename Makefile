@@ -30,25 +30,6 @@ generate:
 build:
 	@echo "Building frameworks in dependency order..."
 	xcodebuild -project TruvideoSDK.xcodeproj -scheme DI -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme CloudStorageKit -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme CloudStorageKitTesting -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme StorageKit -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme StorageKitTesting -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme Utilities -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme UtilitiesTesting -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme CoreDataUtilities -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme Telemetry -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme InternalUtilities -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme Networking -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme NetworkingTesting -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruVideoApi -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruVideoMediaUpload -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdkCamera -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdk -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdkTesting -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdkMedia -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild test -project TruvideoSDK.xcodeproj -scheme TruVideoFoundation -sdk iphonesimulator -destination '$(SIM_DEST)'
-	xcodebuild test -project TruvideoSDK.xcodeproj -scheme TruVideoRuntime -sdk iphonesimulator -destination '$(SIM_DEST)'
 	@echo "All frameworks built successfully!"
 
 # Build specific framework by scheme
