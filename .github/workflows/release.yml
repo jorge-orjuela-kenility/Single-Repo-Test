@@ -39,8 +39,12 @@ jobs:
       CHANNEL_PLIST_KEY: "TRVReleaseChannel"
       GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
 
-      # Force all SwiftPM checkouts into the workspace (avoid global Xcode SourcePackages)
-      SPM_CLONE_DIR: ${{ github.workspace }}/.spm-checkouts
+      # CI paths (make them deterministic so SPM doesn't fight itself)
+      DERIVED_DATA: ${{ github.workspace }}/DerivedData
+      SPM_CHECKOUTS: ${{ github.workspace }}/.spm-checkouts
+
+      # A scheme that exists and pulls the package graph
+      RESOLVE_SCHEME: DI
 
     steps:
       - uses: actions/checkout@v4
@@ -49,23 +53,13 @@ jobs:
           token: ${{ secrets.GH_EXTERNAL_PAT }}
 
       - name: Tooling / Git identity
-        shell: bash
         run: |
           set -euo pipefail
-
-          # Avoid brew update in CI (can stall)
           brew install jq xcodegen swiftlint swiftformat || true
-
           git config user.name  "truvideo[bot]"
           git config user.email "truvideo[bot]@users.noreply.github.com"
 
-          # Reduce git flakiness on GH runners
-          git config --global http.version HTTP/1.1
-          git config --global core.compression 0
-          git config --global fetch.prune true
-
       - name: Clone remote repository (external token)
-        shell: bash
         run: |
           set -euo pipefail
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
@@ -75,6 +69,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # For workflow_dispatch there is no PR payload; allow it to continue.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "::notice::workflow_dispatch: skipping PR label policy checks"
+            exit 0
+          fi
 
           BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
           LABELS="${{ join(github.event.pull_request.labels.*.name, ' ') }}"
@@ -160,81 +160,78 @@ jobs:
           echo "DRY=$dry" >> "$SCOPE_FILE"
           echo "Wrote scope to $SCOPE_FILE"
 
-      - name: Clean Xcode/SwiftPM state (avoid wedged checkouts)
-        shell: bash
+      - name: Cache SwiftPM + Xcode SourcePackages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.SPM_CHECKOUTS }}
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', '**/Package.resolved', 'project.yml') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Prepare CI build folders (don’t delete caches)
         run: |
           set -euo pipefail
-          rm -rf ~/Library/Caches/org.swift.swiftpm
-          rm -rf ~/Library/Developer/Xcode/SourcePackages
-          rm -rf ~/Library/Developer/Xcode/DerivedData
-          rm -rf "$SPM_CLONE_DIR"
+          rm -rf "${DERIVED_DATA}" || true
+          mkdir -p "${DERIVED_DATA}"
+          mkdir -p "${SPM_CHECKOUTS}"
 
-      - name: Generate Xcode project
-        timeout-minutes: 25
-        shell: bash
+      - name: Generate Xcode project (no build)
+        timeout-minutes: 10
         run: |
           set -euo pipefail
-
-          SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
-          if [ ! -f "$SCOPE_FILE" ]; then
-            echo "Scope file not found; exiting (nothing to cut)."
-            exit 0
-          fi
-
-          # shellcheck source=/dev/null
-          source "$SCOPE_FILE"
-          if [ -z "${AFF:-}" ]; then
-            echo "AFF is empty; skipping generate Xcode project."
-            exit 0
-          fi
-
-          make genbuild
-
-          if [ -f "TruvideoSDK.xcodeproj/project.pbxproj" ]; then
-            proj="TruvideoSDK.xcodeproj"
-          else
-            proj=$(ls -1 *.xcodeproj 2>/dev/null | head -n1 || true)
-          fi
-
-          if [ -z "$proj" ]; then
-            echo "No .xcodeproj found after make genbuild"
+          # IMPORTANT: do NOT run make genbuild (ends with open)
+          make generate
+          if [ ! -d "TruvideoSDK.xcodeproj" ]; then
+            echo "ERROR: TruvideoSDK.xcodeproj not generated"
             exit 1
           fi
 
-          echo "PROJECT=$proj" >> "$GITHUB_ENV"
-          echo "Using PROJECT=$proj"
-
-      - name: Resolve SwiftPM dependencies (timeout + retry + local checkouts)
-        shell: bash
+      - name: Resolve SwiftPM (retry + fixed checkout dir)
+        timeout-minutes: 25
         run: |
           set -euo pipefail
 
-          run_with_timeout () { perl -e 'alarm shift; exec @ARGV' "$@"; }
+          resolve() {
+            xcodebuild -resolvePackageDependencies \
+              -project TruvideoSDK.xcodeproj \
+              -scheme "${RESOLVE_SCHEME}" \
+              -derivedDataPath "${DERIVED_DATA}" \
+              -clonedSourcePackagesDirPath "${SPM_CHECKOUTS}" \
+              -disableAutomaticPackageResolution
+          }
 
-          # Resolve once, explicitly, so builds don't do implicit resolution.
-          # Use a scheme that exists early (DI) so we always resolve the same graph.
           for i in 1 2 3; do
-            echo "Resolve attempt $i..."
-
-            if run_with_timeout 1200 \
-              xcodebuild -resolvePackageDependencies \
-                -project "$PROJECT" \
-                -scheme DI \
-                -clonedSourcePackagesDirPath "$SPM_CLONE_DIR"; then
-              echo "✅ Resolved packages into $SPM_CLONE_DIR"
+            echo "=== Resolve attempt $i/3 ==="
+            if resolve; then
+              echo "✅ SwiftPM resolved"
               exit 0
             fi
-
-            echo "⚠️ Resolve timed out/failed. Cleaning and retrying..."
-            rm -rf ~/Library/Caches/org.swift.swiftpm
-            rm -rf ~/Library/Developer/Xcode/SourcePackages
-            rm -rf ~/Library/Developer/Xcode/DerivedData
-            rm -rf "$SPM_CLONE_DIR"
-            sleep 15
+            echo "⚠️ Resolve failed; cleaning only SPM_CHECKOUTS and retrying..."
+            rm -rf "${SPM_CHECKOUTS}" || true
+            mkdir -p "${SPM_CHECKOUTS}"
+            sleep 10
           done
 
-          echo "❌ SwiftPM resolution failed after retries."
+          echo "❌ SwiftPM resolve failed after retries"
           exit 1
+
+      - name: Sanity build (DI) using resolved packages
+        timeout-minutes: 45
+        run: |
+          set -euo pipefail
+
+          xcodebuild \
+            -project TruvideoSDK.xcodeproj \
+            -scheme DI \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
+            -derivedDataPath "${DERIVED_DATA}" \
+            -clonedSourcePackagesDirPath "${SPM_CHECKOUTS}" \
+            -disableAutomaticPackageResolution \
+            build
 
       - name: Compute versions, update Info.plist, generate Version.swift, tag & release
         shell: bash
@@ -243,12 +240,11 @@ jobs:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
           SDK_NON_PROD_KEY: ${{ secrets.SDK_NON_PROD_KEY }}
           SDK_PROD_KEY: ${{ secrets.SDK_PROD_KEY }}
-          # Make available to your Makefile/scripts (so xcodebuild uses it)
-          SPM_CLONE_DIR: ${{ github.workspace }}/.spm-checkouts
         run: |
-          set -euo pipefail
+          set -eo pipefail
           trap 'ret=$?; echo "ERROR: command failed with exit $ret: ${BASH_COMMAND} at line ${LINENO}"; exit $ret' ERR
 
+          # load scope vars produced by the scope step
           SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
           if [ ! -f "$SCOPE_FILE" ]; then
             echo "Scope file not found; exiting (nothing to cut)."
@@ -257,6 +253,7 @@ jobs:
           # shellcheck source=/dev/null
           source "$SCOPE_FILE"
 
+          # Only continue if both CUT and AFF are set
           if [ -z "${CUT:-}" ] || [ -z "${AFF:-}" ]; then
             echo "CUT or AFF empty; nothing to do."
             exit 0
@@ -264,8 +261,6 @@ jobs:
 
           cut="$CUT"
           dry="$DRY"
-
-          BRANCH_REF="$(git rev-parse HEAD)"
 
           find_plists () { git ls-files "$1" | grep -E '/Info\.plist$' || true; }
           read_short_ver () { /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$1" 2>/dev/null || true; }
@@ -388,38 +383,27 @@ jobs:
           }
 
           cut_for () {
-            local key="$1" cut_type="$2" phase="${3:-release}" prefix path vdir prerelease title
-            local ORIGINAL_DIR
-            ORIGINAL_DIR="$(pwd)"
+            local key="$1" cut_type="$2" phase="${3:-release}" prefix path vdir
 
             base_ver="$SHARED_BASE_VER"
             full="$SHARED_FULL"
             channel="$SHARED_CHANNEL"
             build_num="$SHARED_BUILD_NUM"
-            range="$SHARED_RANGE"
 
             prefix="$key"
             case "$key" in
-              DI)               path="Libraries/Foundation/Core/DI";                 vdir="Libraries/Foundation/Core/DI/Sources" ;;
+              DI)               path="Libraries/Foundation/Core/DI";                vdir="Libraries/Foundation/Core/DI/Sources" ;;
               TruVideoRuntime)  path="Libraries/Foundation/Core/Runtime";           vdir="Libraries/Foundation/Core/Runtime/Sources" ;;
               StorageKit)       path="Libraries/Foundation/Extended/Storage";       vdir="Libraries/Foundation/Extended/Storage/Sources" ;;
               TruVideoFoundation) path="Libraries/Foundation/Core/Foundation";      vdir="Libraries/Foundation/Core/Foundation/Sources" ;;
               Networking)       path="Libraries/Internal/Core/Networking";          vdir="Libraries/Internal/Core/Networking/Sources" ;;
               TruVideoApi)      path="Libraries/Internal/Extended/TruVideoApi";     vdir="Libraries/Internal/Extended/TruVideoApi/Sources" ;;
               TruvideoSdk)      path="Libraries/External/Extended/App";             vdir="Libraries/External/Extended/App/Sources" ;;
-              TruVideoMediaUpload) path="Libraries/Plugins/Core/MediaUpload";       vdir="Libraries/Plugins/Core/MediaUpload/Sources" ;;
-              TruvideoSdkCamera) path="Libraries/Plugins/External/Camera";          vdir="Libraries/Plugins/External/Camera/Sources" ;;
-              TruvideoSdkMedia) path="Libraries/Plugins/External/Media";            vdir="Libraries/Plugins/External/Media/Sources" ;;
+              TruVideoMediaUpload) path="Libraries/Plugins/Core/MediaUpload";      vdir="Libraries/Plugins/Core/MediaUpload/Sources" ;;
+              TruvideoSdkCamera) path="Libraries/Plugins/External/Camera";         vdir="Libraries/Plugins/External/Camera/Sources" ;;
+              TruvideoSdkMedia) path="Libraries/Plugins/External/Media";           vdir="Libraries/Plugins/External/Media/Sources" ;;
               *) echo "Error: Unknown framework key '$key'"; exit 1 ;;
             esac
-
-            if [ "$cut_type" = "rc" ]; then
-              prerelease="true"
-              title="Release Candidate for **$prefix $base_ver**."
-            else
-              prerelease="false"
-              title="Production release for **$prefix $base_ver**."
-            fi
 
             while read -r plist; do
               [ -z "$plist" ] && continue
@@ -436,12 +420,7 @@ jobs:
               git add "$vdir/Version.swift"
             fi
 
-            if [ "$phase" = "apply" ]; then
-              cd "$ORIGINAL_DIR" || true
-              return 0
-            fi
-
-            cd "$ORIGINAL_DIR" || true
+            [ "$phase" = "apply" ] && return 0
             return 0
           }
 
@@ -518,11 +497,36 @@ jobs:
                 fi
               fi
 
-              # IMPORTANT:
-              # Ensure your Makefile uses: xcodebuild ... -clonedSourcePackagesDirPath "$SPM_CLONE_DIR"
+              # IMPORTANT: call make xcframeworks BUT force xcodebuild to reuse our derived data + spm checkouts
+              # We do it by exporting env vars consumed by xcodebuild wrapper flags below.
               echo "== Building all XCFrameworks (make xcframeworks) =="
-              cd "$GITHUB_WORKSPACE" || exit 1
-              make xcframeworks
+
+              # Patch: use a wrapper function so every xcodebuild call gets our SPM paths.
+              export XCODEBUILD_FLAGS="-derivedDataPath \"${DERIVED_DATA}\" -clonedSourcePackagesDirPath \"${SPM_CHECKOUTS}\" -disableAutomaticPackageResolution"
+              # If you want, update Makefile to append $(XCODEBUILD_FLAGS) on each xcodebuild call.
+              # For now, we build XCFrameworks without relying on Makefile's 'build' target.
+              # We'll just invoke the Makefile XCFramework target but it must support flags; otherwise, do manual loop below.
+
+              # Manual XCFramework build loop (does NOT require Makefile changes):
+              PACKAGE_FRAMEWORKS=( DI TruVideoRuntime TruVideoFoundation Networking StorageKit TruVideoApi TruvideoSdk TruVideoMediaUpload TruvideoSdkCamera TruvideoSdkMedia )
+
+              for SCHEME in "${PACKAGE_FRAMEWORKS[@]}"; do
+                echo "== XCFramework: ${SCHEME} =="
+                xcodebuild -project TruvideoSDK.xcodeproj -scheme "${SCHEME}" -sdk iphoneos -configuration Release \
+                  -derivedDataPath "${DERIVED_DATA}" -clonedSourcePackagesDirPath "${SPM_CHECKOUTS}" -disableAutomaticPackageResolution \
+                  DEFINES_MODULE=YES SWIFT_INSTALL_OBJC_HEADER=NO SWIFT_EMIT_LOC_STRINGS=NO build
+
+                xcodebuild -project TruvideoSDK.xcodeproj -scheme "${SCHEME}" -sdk iphonesimulator -configuration Release \
+                  -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
+                  -derivedDataPath "${DERIVED_DATA}" -clonedSourcePackagesDirPath "${SPM_CHECKOUTS}" -disableAutomaticPackageResolution \
+                  DEFINES_MODULE=YES SWIFT_INSTALL_OBJC_HEADER=NO SWIFT_EMIT_LOC_STRINGS=NO build
+
+                mkdir -p "${DERIVED_DATA}/XCFrameworks"
+                xcodebuild -create-xcframework \
+                  -framework "${DERIVED_DATA}/Build/Products/Release-iphoneos/${SCHEME}.framework" \
+                  -framework "${DERIVED_DATA}/Build/Products/Release-iphonesimulator/${SCHEME}.framework" \
+                  -output "${DERIVED_DATA}/XCFrameworks/${SCHEME}.xcframework"
+              done
             fi
 
             if [ "$dry" = "true" ]; then
@@ -542,8 +546,7 @@ jobs:
                 "%CHANGELOG%")
               body="${body_header//%CHANGELOG%/$SHARED_CHANGELOG}"
 
-              PACKAGE_FRAMEWORKS=( TruvideoSdk TruvideoSdkCamera TruvideoSdkMedia DI Networking StorageKit TruVideoApi TruVideoFoundation TruVideoMediaUpload TruVideoRuntime )
-              XC_BASE="$GITHUB_WORKSPACE/DerivedData/XCFrameworks"
+              XC_BASE="${DERIVED_DATA}/XCFrameworks"
               mkdir -p "$GITHUB_WORKSPACE/release-artifacts"
 
               for key in "${PACKAGE_FRAMEWORKS[@]}"; do
@@ -573,8 +576,8 @@ jobs:
                 echo "ERROR: Package.swift not found in ${EXTERNAL_REPO}"
                 exit 1
               fi
-              sed -i '' "s|<version>|${VERSION}|g" "$PACKAGE_FILE"
 
+              sed -i '' "s|<version>|${VERSION}|g" "$PACKAGE_FILE"
               for key in "${PACKAGE_FRAMEWORKS[@]}"; do
                 var="CHECKSUM_${key}"
                 val="${!var}"
@@ -586,6 +589,7 @@ jobs:
               else
                 git checkout -b "$VERSION"
               fi
+
               git add "$PACKAGE_FILE"
               if ! git diff --cached --quiet; then
                 git commit -m "SPM: Update Package.swift for $VERSION"
@@ -632,3 +636,12 @@ jobs:
         with:
           name: xcframeworks
           path: release-artifacts/
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-logs
+          path: |
+            ${{ env.DERIVED_DATA }}/Logs
+            ${{ env.DERIVED_DATA }}/Build/Intermediates.noindex/XCBuildData
