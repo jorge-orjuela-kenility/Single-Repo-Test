@@ -66,5 +66,3 @@ Libraries/**/.DS_Store
 *.xcworkspace
 Info.plist
 **/Info.plist
-Version.swift
-**/Version.swift
