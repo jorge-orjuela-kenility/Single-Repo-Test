@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------------
 # Defaults (override from CLI / CI)
 # ------------------------------------------------------------------------------
-SIM_DEST ?= platform=iOS Simulator,name=iPhone 16,OS=latest
+SIM_DEST ?= platform=iOS Simulator,name=Any iOS Simulator Device
 
 # Default target
 help:
