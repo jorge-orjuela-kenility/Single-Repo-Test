@@ -1,227 +1,29 @@
 name: Release
 
+
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - main
-      - "release/*"
   workflow_dispatch:
-    inputs:
-      cut:
-        description: "Release type"
-        type: choice
-        options: [rc, prod]
-        required: false
-      dry_run:
-        description: "Preview only"
-        type: boolean
-        default: false
-        required: false
-
-permissions:
-  contents: write
-  pull-requests: read
-
-concurrency:
-  group: cut-release-${{ github.ref }}
-  cancel-in-progress: false
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
-  release:
-    if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'workflow_dispatch')
+  build:
     runs-on: macos-15
-
-    env:
-      LBL_RC: cut-rc
-      CHANNEL_PLIST_KEY: "TRVReleaseChannel"
-      GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
-
-      DERIVED_DATA: ${{ github.workspace }}/DerivedData
-      SPM_CHECKOUTS: ${{ github.workspace }}/.spm-checkouts          
-
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GH_EXTERNAL_PAT }}
 
-      - name: Tooling / Git identity
-        shell: bash
+      - name: Select Xcode
         run: |
-          set -euo pipefail
-          brew install jq xcodegen swiftlint swiftformat || true
-          git config user.name  "truvideo[bot]"
-          git config user.email "truvideo[bot]@users.noreply.github.com"
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
 
-      - name: Clone remote repository
-        shell: bash
+      - name: Install tooling
         run: |
-          set -euo pipefail
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch origin --tags
+          brew install xcodegen || true
 
-      - name: Force GitHub token for ALL SwiftPM fetches
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Make every https://github.com/* fetch use the PAT (avoids prompts + rate-limits)
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-          git config --global advice.detachedHead false
-          git config --global http.lowSpeedLimit 1000
-          git config --global http.lowSpeedTime 60
+      - name: Generate project
+        run: make generate
 
-      - name: Validate release policy
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
-          LABELS="${{ join(github.event.pull_request.labels.*.name, ' ') }}"
-
-          echo "Base branch: $BASE_BRANCH"
-          echo "Labels: $LABELS"
-
-          has_rc=false
-          [[ "$LABELS" =~ (^|[[:space:]])cut-rc($|[[:space:]]) ]] && has_rc=true
-
-          if [[ "$BASE_BRANCH" == "release/next" ]]; then
-            if ! $has_rc; then
-              echo "::notice::No cut-rc label found; skipping release"
-              exit 0
-            fi
-          else
-            echo "::notice::Branch $BASE_BRANCH does not trigger releases (only release/next with cut-rc does)"
-            exit 0
-          fi
-
-          echo "Release policy validated"
-
-      - name: Resolve cut type and frameworks
-        id: scope
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          EVENT_FILE="${GITHUB_EVENT_PATH:-}"
-          EVENT_NAME="${GITHUB_EVENT_NAME:-}"
-
-          labels=""
-          if [ -n "$EVENT_FILE" ]; then
-            labels="$(jq -r '.pull_request.labels[].name // empty' "$EVENT_FILE" 2>/dev/null | sed '/^\s*$/d' || true)"
-          fi
-
-          safe_trim() {
-            printf "%s" "$1" \
-              | tr '\t' ' ' \
-              | tr -s ' ' \
-              | sed 's/^ *//; s/ *$//'
-          }
-
-          cut=""
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$EVENT_FILE" ]; then
-            cut="$(jq -r '.inputs.cut // empty' "$EVENT_FILE" 2>/dev/null || true)"
-          fi
-
-          if [ -z "$cut" ]; then
-            if grep -Fxq "${LBL_RC}" <<< "$labels"; then
-              cut="rc"
-            fi
-          fi
-
-          allow=""
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$EVENT_FILE" ]; then
-            frameworks="$(jq -r '.inputs.frameworks // empty' "$EVENT_FILE" 2>/dev/null || true)"
-            if [ "$frameworks" = "all" ] || [ -z "$frameworks" ]; then
-              allow="$(grep -B 1 'type: framework' "$GITHUB_WORKSPACE/project.yml" 2>/dev/null \
-                | grep -E '^  [A-Za-z0-9]+:' \
-                | sed 's/^  //; s/:$//' \
-                | tr '\n' ' ' | sed 's/ $//')"
-            else
-              allow="$frameworks"
-            fi
-          else
-            allow="$(grep -B 1 'type: framework' "$GITHUB_WORKSPACE/project.yml" 2>/dev/null \
-              | grep -E '^  [A-Za-z0-9]+:' \
-              | sed 's/^  //; s/:$//' \
-              | tr '\n' ' ' | sed 's/ $//')"
-          fi
-
-          allow="$(safe_trim "$allow")"
-          final="$allow"
-
-          dry="false"
-          if [ -n "$EVENT_FILE" ]; then
-            dry="$(jq -r '.inputs.dry_run // "false"' "$EVENT_FILE" 2>/dev/null || true)"
-          fi
-
-          echo "cut=$cut" >> "$GITHUB_OUTPUT"
-          echo "aff=$final" >> "$GITHUB_OUTPUT"
-          echo "dry=$dry" >> "$GITHUB_OUTPUT"
-
-          SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
-          echo "CUT=$cut" > "$SCOPE_FILE"
-          echo "AFF=\"$final\"" >> "$SCOPE_FILE"
-          echo "DRY=$dry" >> "$SCOPE_FILE"
-          echo "Wrote scope to $SCOPE_FILE"
-
-      # Cache only SwiftPM cache + local checkouts (do NOT cache Xcode SourcePackages)
-      - name: Cache SwiftPM
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Caches/org.swift.swiftpm
-            ${{ github.workspace }}/.spm-checkouts
-          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved', 'project.yml') }}
-          restore-keys: |
-            spm-${{ runner.os }}-
-
-      - name: Clean DerivedData + Xcode SourcePackages
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf "${DERIVED_DATA}" || true
-          rm -rf "${SPM_CHECKOUTS}" || true
-          mkdir -p "${DERIVED_DATA}"
-          mkdir -p "${SPM_CHECKOUTS}"
-
-          # This cache is a common source of stuck resolves on runners.
-          rm -rf ~/Library/Developer/Xcode/SourcePackages || true
-
-      - name: Generate Xcode project 
-        timeout-minutes: 25
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
-          if [ ! -f "$SCOPE_FILE" ]; then            
-            exit 0
-          fi
-          # shellcheck source=/dev/null
-          source "$SCOPE_FILE"
-
-          if [ -z "${AFF:-}" ]; then
-            echo "AFF is empty; skipping generate Xcode project."
-            exit 0
-          fi
-
-          make generate
-
-          if [ -f "TruvideoSDK.xcodeproj/project.pbxproj" ]; then
-            proj="TruvideoSDK.xcodeproj"
-          else
-            proj="$(ls -1 *.xcodeproj 2>/dev/null | head -n1 || true)"
-          fi
-
-          if [ -z "$proj" ]; then
-            echo "No .xcodeproj found after make generate"
-            exit 1
-          fi
-
-          make build
-
-     
+      - name: Build DI (simulator)
+        run: make build
