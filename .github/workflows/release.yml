@@ -5,14 +5,14 @@ on:
     types: [closed]
     branches:
       - main
-      - 'release/*'
+      - "release/*"
   workflow_dispatch:
     inputs:
       cut:
         description: "Release type"
         type: choice
         options: [rc, prod]
-        required: false      
+        required: false
       dry_run:
         description: "Preview only"
         type: boolean
@@ -34,11 +34,13 @@ jobs:
       (github.event_name == 'workflow_dispatch')
     runs-on: macos-15
 
-    env:      
+    env:
       LBL_RC: cut-rc
-
-      CHANNEL_PLIST_KEY: 'TRVReleaseChannel'
+      CHANNEL_PLIST_KEY: "TRVReleaseChannel"
       GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
+
+      # Force all SwiftPM checkouts into the workspace (avoid global Xcode SourcePackages)
+      SPM_CLONE_DIR: ${{ github.workspace }}/.spm-checkouts
 
     steps:
       - uses: actions/checkout@v4
@@ -47,15 +49,28 @@ jobs:
           token: ${{ secrets.GH_EXTERNAL_PAT }}
 
       - name: Tooling / Git identity
+        shell: bash
         run: |
-         brew install jq xcodegen swiftlint swiftformat || true
-         git config user.name  "truvideo[bot]"
-         git config user.email "truvideo[bot]@users.noreply.github.com"
+          set -euo pipefail
+
+          # Avoid brew update in CI (can stall)
+          brew install jq xcodegen swiftlint swiftformat || true
+
+          git config user.name  "truvideo[bot]"
+          git config user.email "truvideo[bot]@users.noreply.github.com"
+
+          # Reduce git flakiness on GH runners
+          git config --global http.version HTTP/1.1
+          git config --global core.compression 0
+          git config --global fetch.prune true
 
       - name: Clone remote repository (external token)
+        shell: bash
         run: |
+          set -euo pipefail
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch origin --tags
+
       - name: Validate release policy
         shell: bash
         run: |
@@ -80,39 +95,36 @@ jobs:
             exit 0
           fi
 
-          echo "Release policy validated"    
+          echo "Release policy validated"
+
       - name: Resolve cut type and frameworks (manual > labels > paths)
         id: scope
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
 
-          # Use runtime env and the event JSON rather than YAML expansions
           EVENT_FILE="${GITHUB_EVENT_PATH:-}"
           EVENT_NAME="${GITHUB_EVENT_NAME:-}"
 
-          # Extract labels safely (one per line); only when PR event has labels
           labels=""
           if [ -n "$EVENT_FILE" ]; then
             labels="$(jq -r '.pull_request.labels[].name // empty' "$EVENT_FILE" 2>/dev/null | sed '/^\s*$/d' || true)"
           fi
 
-          # Trim safely removing double spaces, leading/trailing
           safe_trim() {
             printf "%s" "$1" \
               | tr '\t' ' ' \
               | tr -s ' ' \
               | sed 's/^ *//; s/ *$//'
           }
-          
+
           cut=""
 
-          # read inputs safely from event json if workflow_dispatch
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$EVENT_FILE" ]; then
             cut="$(jq -r '.inputs.cut // empty' "$EVENT_FILE" 2>/dev/null || true)"
           fi
 
-          if [ -z "$cut" ]; then            
+          if [ -z "$cut" ]; then
             if grep -Fxq "${LBL_RC}" <<< "$labels"; then
               cut="rc"
             fi
@@ -133,36 +145,42 @@ jobs:
           allow="$(safe_trim "$allow")"
           final="$allow"
 
-          # dry run input (safe read)
           dry="false"
           if [ -n "$EVENT_FILE" ]; then
             dry="$(jq -r '.inputs.dry_run // "false"' "$EVENT_FILE" 2>/dev/null || true)"
           fi
-          
+
           echo "cut=$cut" >> "$GITHUB_OUTPUT"
           echo "aff=$final" >> "$GITHUB_OUTPUT"
           echo "dry=$dry" >> "$GITHUB_OUTPUT"
 
-          # Also persist to a file so subsequent steps can source it without YAML interpolation
           SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
-          # printf 'CUT=%s\nAFF=%s\nDRY=%s\n' "$cut" "$final" "$dry" > "$SCOPE_FILE"
           echo "CUT=$cut" > "$SCOPE_FILE"
           echo "AFF=\"$final\"" >> "$SCOPE_FILE"
           echo "DRY=$dry" >> "$SCOPE_FILE"
           echo "Wrote scope to $SCOPE_FILE"
-      - name: Reset SwiftPM caches
+
+      - name: Clean Xcode/SwiftPM state (avoid wedged checkouts)
+        shell: bash
         run: |
-            rm -rf ~/Library/Caches/org.swift.swiftpm
+          set -euo pipefail
+          rm -rf ~/Library/Caches/org.swift.swiftpm
+          rm -rf ~/Library/Developer/Xcode/SourcePackages
+          rm -rf ~/Library/Developer/Xcode/DerivedData
+          rm -rf "$SPM_CLONE_DIR"
 
       - name: Generate Xcode project
+        timeout-minutes: 25
+        shell: bash
         run: |
-          set -eo pipefail
-          # load scope vars produced by the previous step
+          set -euo pipefail
+
           SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
           if [ ! -f "$SCOPE_FILE" ]; then
             echo "Scope file not found; exiting (nothing to cut)."
             exit 0
           fi
+
           # shellcheck source=/dev/null
           source "$SCOPE_FILE"
           if [ -z "${AFF:-}" ]; then
@@ -171,30 +189,66 @@ jobs:
           fi
 
           make genbuild
+
           if [ -f "TruvideoSDK.xcodeproj/project.pbxproj" ]; then
             proj="TruvideoSDK.xcodeproj"
           else
             proj=$(ls -1 *.xcodeproj 2>/dev/null | head -n1 || true)
           fi
+
           if [ -z "$proj" ]; then
-            echo "No .xcodeproj found after make genbuild"; exit 1
+            echo "No .xcodeproj found after make genbuild"
+            exit 1
           fi
-          echo "PROJECT=$proj" >> $GITHUB_ENV
+
+          echo "PROJECT=$proj" >> "$GITHUB_ENV"
           echo "Using PROJECT=$proj"
+
+      - name: Resolve SwiftPM dependencies (timeout + retry + local checkouts)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_with_timeout () { perl -e 'alarm shift; exec @ARGV' "$@"; }
+
+          # Resolve once, explicitly, so builds don't do implicit resolution.
+          # Use a scheme that exists early (DI) so we always resolve the same graph.
+          for i in 1 2 3; do
+            echo "Resolve attempt $i..."
+
+            if run_with_timeout 1200 \
+              xcodebuild -resolvePackageDependencies \
+                -project "$PROJECT" \
+                -scheme DI \
+                -clonedSourcePackagesDirPath "$SPM_CLONE_DIR"; then
+              echo "✅ Resolved packages into $SPM_CLONE_DIR"
+              exit 0
+            fi
+
+            echo "⚠️ Resolve timed out/failed. Cleaning and retrying..."
+            rm -rf ~/Library/Caches/org.swift.swiftpm
+            rm -rf ~/Library/Developer/Xcode/SourcePackages
+            rm -rf ~/Library/Developer/Xcode/DerivedData
+            rm -rf "$SPM_CLONE_DIR"
+            sleep 15
+          done
+
+          echo "❌ SwiftPM resolution failed after retries."
+          exit 1
 
       - name: Compute versions, update Info.plist, generate Version.swift, tag & release
         shell: bash
-        env:          
+        env:
           GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
           SDK_NON_PROD_KEY: ${{ secrets.SDK_NON_PROD_KEY }}
           SDK_PROD_KEY: ${{ secrets.SDK_PROD_KEY }}
+          # Make available to your Makefile/scripts (so xcodebuild uses it)
+          SPM_CLONE_DIR: ${{ github.workspace }}/.spm-checkouts
         run: |
-          set -eo pipefail
+          set -euo pipefail
           trap 'ret=$?; echo "ERROR: command failed with exit $ret: ${BASH_COMMAND} at line ${LINENO}"; exit $ret' ERR
 
-
-          # load scope vars produced by the scope step
           SCOPE_FILE="$GITHUB_WORKSPACE/.cut_release_scope"
           if [ ! -f "$SCOPE_FILE" ]; then
             echo "Scope file not found; exiting (nothing to cut)."
@@ -203,7 +257,6 @@ jobs:
           # shellcheck source=/dev/null
           source "$SCOPE_FILE"
 
-          # Only continue if both CUT and AFF are set
           if [ -z "${CUT:-}" ] || [ -z "${AFF:-}" ]; then
             echo "CUT or AFF empty; nothing to do."
             exit 0
@@ -243,7 +296,7 @@ jobs:
             echo "[DEBUG bump] range=$2" >&2
             git log --format='%h %s' $2 >&2
           }
-          
+
           rc_build_for_base_all() {
             local base="$1" max=0 n
             while read -r t; do
@@ -263,10 +316,7 @@ jobs:
               case "$channel" in
                 RC)   [ -z "${SDK_NON_PROD_KEY:-}" ] && { echo "CORE SDK secret missing for channel RC"; exit 1; } ;;
                 PROD) [ -z "${SDK_PROD_KEY:-}" ] && { echo "CORE SDK secret missing for channel PROD"; exit 1; } ;;
-                *)
-                  echo "Unknown channel '$channel' for core SDK"
-                  exit 1
-                  ;;
+                *) echo "Unknown channel '$channel' for core SDK"; exit 1 ;;
               esac
             fi
 
@@ -294,24 +344,14 @@ jobs:
           }
 
           clean_changelog_subject () {
-          local s="$1"
-
-        
-          s="$(echo "$s" | sed -E 's/^(feat|fix|perf|refactor|docs|test|build|ci|chore)(\([^)]+\))?(!)?: *//')"
-
-        
-          s="$(echo "$s" | sed -E 's/^[A-Z]+-[0-9]+: *//')"
-          s="$(echo "$s" | sed -E 's/[A-Z]+-[0-9]+//g')"
- 
-          s="$(echo "$s" | sed -E 's/ *\(#?[0-9]+\)$//')"
-
-          # 4. Trim spaces (including multiple spaces left after Jira removal)
-          s="$(echo "$s" | sed -E 's/^ +| +$//g' | tr -s ' ')"
-
-          # 5. Capitalize first letter (optional but recommended)
-          s="$(echo "$s" | sed -E 's/^./\U&/')"
-
-          echo "$s"
+            local s="$1"
+            s="$(echo "$s" | sed -E 's/^(feat|fix|perf|refactor|docs|test|build|ci|chore)(\([^)]+\))?(!)?: *//')"
+            s="$(echo "$s" | sed -E 's/^[A-Z]+-[0-9]+: *//')"
+            s="$(echo "$s" | sed -E 's/[A-Z]+-[0-9]+//g')"
+            s="$(echo "$s" | sed -E 's/ *\(#?[0-9]+\)$//')"
+            s="$(echo "$s" | sed -E 's/^ +| +$//g' | tr -s ' ')"
+            s="$(echo "$s" | sed -E 's/^./\U&/')"
+            echo "$s"
           }
 
           gen_changelog_md () {
@@ -319,11 +359,8 @@ jobs:
             local feats="" fixes="" perfs="" refacs="" docs="" tests="" build="" ci="" chores="" breaks=""
             while IFS= read -r s; do
               [ -z "$s" ] && continue
-
               clean="$(clean_changelog_subject "$s")"
-
               [[ "$s" =~ BREAKING\ CHANGE|!\: ]] && breaks="${breaks}"$'\n- '"$clean"
-
               if   [[ "$s" =~ ^feat(\(|:|\!) ]];      then feats="${feats}"$'\n- '"$clean"
               elif [[ "$s" =~ ^fix(\(|:|\!) ]];       then fixes="${fixes}"$'\n- '"$clean"
               elif [[ "$s" =~ ^perf(\(|:|\!) ]];      then perfs="${perfs}"$'\n- '"$clean"
@@ -352,7 +389,6 @@ jobs:
 
           cut_for () {
             local key="$1" cut_type="$2" phase="${3:-release}" prefix path vdir prerelease title
-
             local ORIGINAL_DIR
             ORIGINAL_DIR="$(pwd)"
 
@@ -364,50 +400,17 @@ jobs:
 
             prefix="$key"
             case "$key" in
-              DI)
-                path="Libraries/Foundation/Core/DI"
-                vdir="Libraries/Foundation/Core/DI/Sources"
-                ;;
-              TruVideoRuntime)
-                path="Libraries/Foundation/Core/Runtime"
-                vdir="Libraries/Foundation/Core/Runtime/Sources"
-                ;;
-              StorageKit)
-                path="Libraries/Foundation/Extended/Storage"
-                vdir="Libraries/Foundation/Extended/Storage/Sources"
-                ;;
-              TruVideoFoundation)
-                path="Libraries/Foundation/Core/Foundation"
-                vdir="Libraries/Foundation/Core/Foundation/Sources"
-                ;;
-              Networking)
-                path="Libraries/Internal/Core/Networking"
-                vdir="Libraries/Internal/Core/Networking/Sources"
-                ;;
-              TruVideoApi)
-                path="Libraries/Internal/Extended/TruVideoApi"
-                vdir="Libraries/Internal/Extended/TruVideoApi/Sources"
-                ;;
-              TruvideoSdk)
-                path="Libraries/External/Extended/App"
-                vdir="Libraries/External/Extended/App/Sources"
-                ;;
-              TruVideoMediaUpload)
-                path="Libraries/Plugins/Core/MediaUpload"
-                vdir="Libraries/Plugins/Core/MediaUpload/Sources"
-                ;;
-              TruvideoSdkCamera)
-                path="Libraries/Plugins/External/Camera"
-                vdir="Libraries/Plugins/External/Camera/Sources"
-                ;;
-              TruvideoSdkMedia)
-                path="Libraries/Plugins/External/Media"
-                vdir="Libraries/Plugins/External/Media/Sources"
-                ;;
-              *)
-                echo "Error: Unknown framework key '$key' (not in project.yml type: framework list?)"
-                exit 1
-                ;;
+              DI)               path="Libraries/Foundation/Core/DI";                 vdir="Libraries/Foundation/Core/DI/Sources" ;;
+              TruVideoRuntime)  path="Libraries/Foundation/Core/Runtime";           vdir="Libraries/Foundation/Core/Runtime/Sources" ;;
+              StorageKit)       path="Libraries/Foundation/Extended/Storage";       vdir="Libraries/Foundation/Extended/Storage/Sources" ;;
+              TruVideoFoundation) path="Libraries/Foundation/Core/Foundation";      vdir="Libraries/Foundation/Core/Foundation/Sources" ;;
+              Networking)       path="Libraries/Internal/Core/Networking";          vdir="Libraries/Internal/Core/Networking/Sources" ;;
+              TruVideoApi)      path="Libraries/Internal/Extended/TruVideoApi";     vdir="Libraries/Internal/Extended/TruVideoApi/Sources" ;;
+              TruvideoSdk)      path="Libraries/External/Extended/App";             vdir="Libraries/External/Extended/App/Sources" ;;
+              TruVideoMediaUpload) path="Libraries/Plugins/Core/MediaUpload";       vdir="Libraries/Plugins/Core/MediaUpload/Sources" ;;
+              TruvideoSdkCamera) path="Libraries/Plugins/External/Camera";          vdir="Libraries/Plugins/External/Camera/Sources" ;;
+              TruvideoSdkMedia) path="Libraries/Plugins/External/Media";            vdir="Libraries/Plugins/External/Media/Sources" ;;
+              *) echo "Error: Unknown framework key '$key'"; exit 1 ;;
             esac
 
             if [ "$cut_type" = "rc" ]; then
@@ -450,25 +453,26 @@ jobs:
               | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
               | sort -V | tail -n1
             )
+
             latest_tag=$( git for-each-ref --sort=-creatordate refs/tags --format='%(refname:short)' 2>/dev/null \
               | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | head -n1 )
+
             since_ref=""
             [ -n "$latest_tag" ] && since_ref="$(git rev-list -n1 "$latest_tag")"
             SHARED_RANGE="${since_ref:+${since_ref}..}HEAD"
 
-            if [ "$cut_type" = "rc" ]; then              
+            if [ "$cut_type" = "rc" ]; then
               SHARED_CHANNEL="RC"
-            
               if [[ "$latest_tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 SHARED_BASE_VER="$(bump_from_commits "$last_base_version" "${SHARED_RANGE:-HEAD}")"
                 SHARED_BUILD_NUM="1"
                 SHARED_FULL="${SHARED_BASE_VER}.RC-${SHARED_BUILD_NUM}"
-              else                
+              else
                 SHARED_BASE_VER="${last_base_version:-0.1.0}"
                 SHARED_BUILD_NUM="$(rc_build_for_base_all "$SHARED_BASE_VER")"
                 SHARED_FULL="${SHARED_BASE_VER}.RC-${SHARED_BUILD_NUM}"
               fi
-            else              
+            else
               if [[ "$latest_tag" =~ \.RC-[0-9]+$ ]]; then
                 SHARED_BASE_VER="${last_base_version:-0.1.0}"
                 SHARED_FULL="${SHARED_BASE_VER}"
@@ -481,18 +485,17 @@ jobs:
             fi
 
             echo "Single track version: $SHARED_FULL (${SHARED_CHANNEL}, build ${SHARED_BUILD_NUM})"
-            
             SHARED_CHANGELOG="$(gen_changelog_md "$SHARED_RANGE" ".")"
 
             IFS=' ' read -r -a AFF_ARR <<< "${AFF}"
             for s in "${AFF_ARR[@]}"; do
               cut_for "$s" "$cut_type" "apply"
             done
- 
+
             if [ "$dry" != "true" ] && ! git diff --cached --quiet; then
               git commit -m "chore(release): bump to ${SHARED_FULL} (${SHARED_CHANNEL})"
             fi
-            
+
             RELEASE_TAG="${SHARED_FULL}"
             if [ "$dry" != "true" ]; then
               if git tag -l | grep -q "^${RELEASE_TAG}$"; then
@@ -503,7 +506,7 @@ jobs:
                 git push origin "refs/tags/${RELEASE_TAG}"
                 echo "✅ Tag '${RELEASE_TAG}' pushed."
               fi
-              
+
               CORE_VERSION_SWIFT="$GITHUB_WORKSPACE/Libraries/External/Extended/App/Sources/Version.swift"
               if [ -f "$CORE_VERSION_SWIFT" ]; then
                 BUILD_SECRET=""
@@ -515,7 +518,8 @@ jobs:
                 fi
               fi
 
-              # Build all XCFrameworks once via Makefile (output: DerivedData/XCFrameworks/)
+              # IMPORTANT:
+              # Ensure your Makefile uses: xcodebuild ... -clonedSourcePackagesDirPath "$SPM_CLONE_DIR"
               echo "== Building all XCFrameworks (make xcframeworks) =="
               cd "$GITHUB_WORKSPACE" || exit 1
               make xcframeworks
@@ -564,13 +568,13 @@ jobs:
               git config user.name "truvideo[bot]"
               git config user.email "truvideo[bot]@users.noreply.github.com"
 
-              # Modify existing Package.swift: replace <version> and each binary target checksum (in order)
               PACKAGE_FILE="Package.swift"
               if [ ! -f "$PACKAGE_FILE" ]; then
                 echo "ERROR: Package.swift not found in ${EXTERNAL_REPO}"
                 exit 1
               fi
               sed -i '' "s|<version>|${VERSION}|g" "$PACKAGE_FILE"
+
               for key in "${PACKAGE_FRAMEWORKS[@]}"; do
                 var="CHECKSUM_${key}"
                 val="${!var}"
