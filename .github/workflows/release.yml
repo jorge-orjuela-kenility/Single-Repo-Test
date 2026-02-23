@@ -9,8 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
-    SIM_DEST: generic/platform=iOS Simulator
+    runs-on: macos-15    
     steps:
       - uses: actions/checkout@v4
 
@@ -27,4 +26,4 @@ jobs:
         run: make generate
 
       - name: Build project
-        run: make build
+        run: make build SIM_DEST="generic/platform=iOS Simulator"
