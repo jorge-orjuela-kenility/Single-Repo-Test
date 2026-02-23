@@ -1,29 +1,132 @@
 name: Release
 
-
 on:
-  workflow_dispatch:
   pull_request:
-  push:
-    branches: [main]
+    types: [closed]
+    branches:
+      - main
+      - "release/*"
+  workflow_dispatch:
+    inputs:
+      cut:
+        description: "Release type"
+        type: choice
+        options: [rc, prod]
+        required: false
+      dry_run:
+        description: "Preview only"
+        type: boolean
+        default: false
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: read
 
 jobs:
   build:
-    runs-on: macos-15    
+    if: |
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'workflow_dispatch')
+    runs-on: macos-15
+
+    env:
+      LBL_RC: cut-rc
+      CHANNEL_PLIST_KEY: "TRVReleaseChannel"
+      GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
+      SPM_CLONE_DIR: ${{ github.workspace }}/.spm-checkouts
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Git identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name  "truvideo[bot]"
+          git config user.email "truvideo[bot]@users.noreply.github.com"
+
+      - name: Install tooling
+        run: |
+          brew install jq xcodegen || true
+
+      - name: Resolve cut type and frameworks
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/resolve_scope.sh
+          scripts/resolve_scope.sh
 
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode_16.4.app
           xcodebuild -version
 
-      - name: Install tooling
-        run: |
-          brew install xcodegen || true
+      - name: Cache SwiftPM state
+        uses: actions/cache@v4
+        with:
+          path: |
+            .spm-checkouts
+            DerivedData
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', '**/Package.resolved', '**/Package.swift') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
 
       - name: Generate project
         run: make generate
 
       - name: Build project
         run: make build SIM_DEST="generic/platform=iOS Simulator"
+
+      - name: Compute version
+        id: version
+        run: |
+          set -euo pipefail
+          chmod +x scripts/compute_version.sh
+          
+          CUT_FROM_SCOPE="${{ steps.scope.outputs.cut }}"
+          CUT="${CUT_FROM_SCOPE:-}"
+          
+          if [ -z "$CUT" ]; then
+            CUT="${{ inputs.cut }}"
+          fi
+          
+          if [ -z "$CUT" ]; then
+            echo "::notice::No cut resolved; skipping version compute."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CUT="$CUT" ./scripts/compute_version.sh > version.json
+          cat version.json
+
+          base="$(jq -r .base version.json)"
+          full="$(jq -r .full version.json)"
+          channel="$(jq -r .channel version.json)"
+          build="$(jq -r .build version.json)"
+
+      - name: Apply version changes
+        run: |
+          source "$GITHUB_WORKSPACE/.cut_release_scope"
+          chmod +x ./scripts/apply_version.sh
+
+          VERSION_BASE="${{ steps.version.outputs.base }}" \
+          VERSION_FULL="${{ steps.version.outputs.full }}" \
+          CHANNEL="${{ steps.version.outputs.channel }}" \
+          BUILD_NUM="${{ steps.version.outputs.build }}" \
+          CHANNEL_PLIST_KEY="${CHANNEL_PLIST_KEY}" \
+          AFF="$AFF" \
+          ./scripts/apply_version.sh
+
+          git status --porcelain
+
+      - name: Build XCFrameworks
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build_xcframeworks.sh
+          ./scripts/build_xcframeworks.sh
