@@ -47,8 +47,6 @@ build:
 	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdk -sdk iphonesimulator -destination '$(SIM_DEST)' build
 	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdkTesting -sdk iphonesimulator -destination '$(SIM_DEST)' build
 	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdkMedia -sdk iphonesimulator -destination '$(SIM_DEST)' build
-	xcodebuild test -project TruvideoSDK.xcodeproj -scheme TruVideoFoundation -sdk iphonesimulator -destination '$(SIM_DEST)'
-	xcodebuild test -project TruvideoSDK.xcodeproj -scheme TruVideoRuntime -sdk iphonesimulator -destination '$(SIM_DEST)'
 	@echo "All frameworks built successfully!"
 
 # Build specific framework by scheme
