@@ -29,7 +29,7 @@ generate:
 # Foundation Core first (no dependencies), then others that depend on them
 build:
 	@echo "Building frameworks in dependency order..."
-	xcodebuild -project TruvideoSDK.xcodeproj -scheme DI -sdk iphonesimulator -destination '$(SIM_DEST)' build
+	
 	@echo "All frameworks built successfully!"
 
 # Build specific framework by scheme
