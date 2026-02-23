@@ -133,11 +133,11 @@ public protocol DataRequest: Request {
     /// let task: Response<User> = request.serializing(User.self)
     /// let user = try await task.value
     /// ```
-    func serializing<Value: Decodable>(
+    func serializing<Value: Decodable & Sendable>(
         _ type: Value.Type,
         decoder: JSONDecoder,
         emptyResponseCodes: Set<Int>
-    ) async -> Response<Value, NetworkingError> where Value: Sendable
+    ) async -> Response<Value, NetworkingError>
 
     /// Serializes the response as raw `Data` asynchronously.
     ///
@@ -243,11 +243,11 @@ extension DataRequest {
     /// let task: Response<User, NetworkingError> = request.serializing(User.self)
     /// let user = try await task.value
     /// ```
-    public func serializing<Value: Decodable>(
+    public func serializing<Value: Decodable & Sendable>(
         _ type: Value.Type,
         decoder: JSONDecoder = JSONDecoder(),
         emptyResponseCodes: Set<Int> = DecodableResponseSerializer<Value>.emptyResponseCodes
-    ) async -> Response<Value, NetworkingError> where Value: Sendable {
+    ) async -> Response<Value, NetworkingError> {
         await serializing(Value.self, decoder: JSONDecoder(), emptyResponseCodes: emptyResponseCodes)
     }
 
