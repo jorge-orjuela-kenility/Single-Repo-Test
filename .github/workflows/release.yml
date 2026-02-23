@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    SIM_DEST: generic/platform=iOS Simulator
     steps:
       - uses: actions/checkout@v4
 
@@ -25,5 +26,5 @@ jobs:
       - name: Generate project
         run: make generate
 
-      - name: Build DI (simulator)
+      - name: Build project
         run: make build
