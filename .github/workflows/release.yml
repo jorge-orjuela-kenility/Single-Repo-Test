@@ -161,7 +161,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          TAG="internal/${VERSION_FULL:?VERSION_FULL not set}"          
+          TAG="${VERSION_FULL:?VERSION_FULL not set}"          
 
           git fetch --tags
 
