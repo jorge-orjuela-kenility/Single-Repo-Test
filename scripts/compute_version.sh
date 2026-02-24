@@ -14,11 +14,11 @@ bump_from_commits () {
   local range="$2"
   local bump="patch"
 
-  if git log --format=%B $range 2>/dev/null | grep -Eq 'BREAKING CHANGE|!:' || false; then
+  if [ "$(git log --format=%B $range 2>/dev/null | grep -c -E 'BREAKING CHANGE|!:' || true)" -gt 0 ]; then
     bump="major"
-  elif git log --format=%s $range 2>/dev/null | grep -Eq '^feat(\(|:)|^feat!' || false; then
+  elif [ "$(git log --format=%s $range 2>/dev/null | grep -c -E '^feat(\(|:)|^feat!' || true)" -gt 0 ]; then
     bump="minor"
-  elif git log --format=%s $range 2>/dev/null | grep -Eq '^fix(\(|:)|^fix!|^perf(\(|:)|^perf!' || false; then
+  elif [ "$(git log --format=%s $range 2>/dev/null | grep -c -E '^fix(\(|:)|^fix!|^perf(\(|:)|^perf!' || true)" -gt 0 ]; then
     bump="patch"
   fi
 
@@ -41,11 +41,18 @@ bump_from_commits () {
 rc_build_for_base_all() {
   local base="$1"
   local max=0
+  local n
   while read -r t; do
     [ -z "$t" ] && continue
     n="${t##*RC-}"
     [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt "$max" ] && max="$n"
   done < <( git tag -l "${base}.RC-*" 2>/dev/null )
+  while read -r t; do
+    [ -z "$t" ] && continue
+    n="${t##*-RC.}"
+    n="${n%%.*}"
+    [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt "$max" ] && max="$n"
+  done < <( git tag -l "${base}-RC.*" 2>/dev/null )
 
   echo $((max + 1))
 }
@@ -53,13 +60,14 @@ rc_build_for_base_all() {
 last_base_version=$(
   git tag -l 2>/dev/null \
   | sed 's/\.RC-[0-9]*$//' \
-  | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+  | sed 's/-RC\.[0-9][0-9.]*$//' \
+  | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true \
   | sort -V | tail -n1
 )
 
 latest_tag=$( git for-each-ref --sort=-creatordate refs/tags \
   --format='%(refname:short)' 2>/dev/null \
-  | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' \
+  | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' || true \
   | head -n1 )
 
 since_ref=""
@@ -83,7 +91,7 @@ if [ "$CUT" = "rc" ]; then
 elif [ "$CUT" = "prod" ]; then
   CHANNEL="PROD"
 
-  if [[ "$latest_tag" =~ \.RC-[0-9]+$ ]]; then
+  if [[ "$latest_tag" =~ \.RC-[0-9]+$ ]] || [[ "$latest_tag" =~ -RC\.[0-9]+ ]]; then
     BASE="${last_base_version:-0.1.0}"
     FULL="${BASE}"
   else
