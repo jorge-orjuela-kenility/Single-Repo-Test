@@ -180,18 +180,33 @@ jobs:
 
           rm -rf dist
           mkdir -p dist
-          
-          find DerivedData -type d -name "*.xcframework" -print || true
- 
-          while IFS= read -r fw; do
-            name="$(basename "$fw")" 
-            zip_path="dist/${name}.zip"
 
+          FRAMEWORKS=(
+            DI
+            Networking
+            StorageKit
+            TruVideoApi
+            TruVideoFoundation
+            TruVideoMediaUpload
+            TruVideoRuntime
+            TruvideoSdk
+            TruvideoSdkCamera
+          )
+
+          mapfile -t FOUND < <(find DerivedData -type d -name "*.xcframework" | sort)
+
+          for name in "${FRAMEWORKS[@]}"; do
+            fw="$(printf '%s\n' "${FOUND[@]}" | grep -E "/${name}\.xcframework$" | head -n1 || true)"
+            if [ -z "$fw" ]; then
+              echo "ERROR: ${name}.xcframework not found in DerivedData" >&2
+              exit 1
+            fi
+
+            zip_path="dist/${name}.xcframework.zip"
             rm -f "$zip_path"
-            echo "Zipping $name -> $zip_path"
-
-            ( cd "$(dirname "$fw")" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/$zip_path" "$name" )
-          done < <(find DerivedData -type d -name "*.xcframework" | sort)
+            echo "Zipping $(basename "$fw") -> $zip_path"
+            ( cd "$(dirname "$fw")" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/$zip_path" "$(basename "$fw")" )
+          done
 
           echo "== dist outputs =="
           ls -la dist
@@ -268,6 +283,7 @@ jobs:
             --branch "$REMOTE_BRANCH"            
 
            PRERELEASE_FLAG=""
+
           if [ -f "$GITHUB_WORKSPACE/.cut_release_scope" ]; then
             source "$GITHUB_WORKSPACE/.cut_release_scope"
           fi
