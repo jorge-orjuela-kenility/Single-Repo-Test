@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+set -o errtrace
 
-trap 'echo "❌ Error on line $LINENO: $BASH_COMMAND" >&2' ERR
+# Optional: enable DEBUG=1 in the workflow to get xtrace
+if [[ "${DEBUG:-0}" == "1" ]]; then
+  set -x
+fi
+
+on_err() {
+  local exit_code=$?
+  echo "❌ ERROR (exit=$exit_code) at line $1" >&2
+  echo "   Command: $2" >&2
+}
+trap 'on_err $LINENO "$BASH_COMMAND"' ERR
 
 AFF="${AFF:-}"
 VERSION_BASE="${VERSION_BASE:-}"
@@ -9,37 +20,37 @@ VERSION_FULL="${VERSION_FULL:-}"
 CHANNEL="${CHANNEL:-}"
 BUILD_NUM="${BUILD_NUM:-}"
 
-if [ -z "$AFF" ] || [ -z "$VERSION_BASE" ] || [ -z "$VERSION_FULL" ] || [ -z "$CHANNEL" ] || [ -z "$BUILD_NUM" ]; then
-  echo "Missing required env vars."
-  echo "Required: AFF, VERSION_BASE, VERSION_FULL, CHANNEL, BUILD_NUM"
+if [[ -z "$AFF" || -z "$VERSION_BASE" || -z "$VERSION_FULL" || -z "$CHANNEL" || -z "$BUILD_NUM" ]]; then
+  echo "Missing required env vars." >&2
+  echo "Required: AFF, VERSION_BASE, VERSION_FULL, CHANNEL, BUILD_NUM" >&2
   exit 1
 fi
 
+# Find actual files on disk (works even if generated / untracked)
 find_plists () { find "$1" -type f -name "Info.plist" 2>/dev/null || true; }
 
 read_short_ver () { /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$1" 2>/dev/null || true; }
 
-run_plistbuddy () {
-  local cmd="$1"
-  local plist="$2"
-
-  if ! output=$(/usr/libexec/PlistBuddy -c "$cmd" "$plist" 2>&1); then
-    echo "❌ PlistBuddy failed" >&2
-    echo "  plist:    $plist" >&2
-    echo "  command:  $cmd" >&2
-    echo "  stderr:" >&2
-    echo "$output" >&2
+# Run a command and print stderr on failure (no silent exits)
+run() {
+  local desc="$1"; shift
+  local out
+  if ! out="$("$@" 2>&1)"; then
+    echo "❌ $desc failed" >&2
+    echo "   cmd: $*" >&2
+    echo "   stderr:" >&2
+    echo "$out" >&2
     return 1
   fi
 }
 
-lint_plist () {
+lint_plist_or_dump() {
   local plist="$1"
   if ! /usr/bin/plutil -lint "$plist" >/dev/null 2>&1; then
     echo "❌ Invalid plist: $plist" >&2
-    echo "  --- head ---" >&2
-    head -n 40 "$plist" >&2 || true
-    echo "  --- plutil -p ---" >&2
+    echo "   --- file head ---" >&2
+    head -n 80 "$plist" >&2 || true
+    echo "   --- plutil -p ---" >&2
     /usr/bin/plutil -p "$plist" >&2 || true
     return 1
   fi
@@ -53,38 +64,42 @@ plist_has_key () {
 write_short_ver () {
   local plist="$1" val="$2"
   if plist_has_key "$plist" "CFBundleShortVersionString"; then
-    run_plistbuddy "Set :CFBundleShortVersionString \"$val\"" "$plist"
+    run "Set CFBundleShortVersionString" /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString \"$val\"" "$plist"
   else
-    run_plistbuddy "Add :CFBundleShortVersionString string \"$val\"" "$plist"
+    run "Add CFBundleShortVersionString" /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string \"$val\"" "$plist"
   fi
 }
 
 write_build_num () {
   local plist="$1" val="$2"
   if plist_has_key "$plist" "CFBundleVersion"; then
-    run_plistbuddy "Set :CFBundleVersion \"$val\"" "$plist"
+    run "Set CFBundleVersion" /usr/libexec/PlistBuddy -c "Set :CFBundleVersion \"$val\"" "$plist"
   else
-    run_plistbuddy "Add :CFBundleVersion string \"$val\"" "$plist"
+    run "Add CFBundleVersion" /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string \"$val\"" "$plist"
   fi
 }
 
 apply_plist_updates () {
   local plist="$1"
-  [ -z "$plist" ] && return 0
+  [[ -z "$plist" ]] && return 0
 
-  if [ ! -f "$plist" ]; then
+  echo "  -> apply_plist_updates($plist)"
+
+  if [[ ! -f "$plist" ]]; then
     echo "⚠️ Missing plist (skipping): $plist"
     return 0
   fi
 
-  lint_plist "$plist"
+  lint_plist_or_dump "$plist"
 
+  local cur_short
   cur_short="$(read_short_ver "$plist")"
-  if [ "$cur_short" != "$VERSION_BASE" ]; then
+  if [[ "$cur_short" != "$VERSION_BASE" ]]; then
     write_short_ver "$plist" "$VERSION_BASE"
   fi
 
   write_build_num "$plist" "$BUILD_NUM"
+  echo "  <- apply_plist_updates OK ($plist)"
 }
 
 gen_version_swift () {
@@ -92,12 +107,12 @@ gen_version_swift () {
   mkdir -p "$destdir"
   local vfile="$destdir/Version.swift"
 
-  if [ -f "$vfile" ]; then
+  if [[ -f "$vfile" ]]; then
     sed -i '' "s/SDKVersionNumber = \"[^\"]*\"/SDKVersionNumber = \"$full\"/" "$vfile" || true
     sed -i '' "s/SDKEnvironment = \"[^\"]*\"/SDKEnvironment = \"$channel\"/" "$vfile" || true
     sed -i '' "s/SDKBuildNumber = \"[^\"]*\"/SDKBuildNumber = \"$build\"/" "$vfile" || true
 
-    if [ "$key" = "TruvideoSdk" ]; then
+    if [[ "$key" == "TruvideoSdk" ]]; then
       sed -i '' 's/SDKSecretKey = "[^"]*"/SDKSecretKey = ""/' "$vfile" || true
     fi
   else
@@ -111,7 +126,7 @@ gen_version_swift () {
       echo "let SDKVersionNumber = \"$full\""
       echo "let SDKEnvironment = \"$channel\""
       echo "let SDKBuildNumber = \"$build\""
-      [ "$key" = "TruvideoSdk" ] && echo 'let SDKSecretKey = ""'
+      [[ "$key" == "TruvideoSdk" ]] && echo 'let SDKSecretKey = ""'
     } > "$vfile"
   fi
 }
@@ -129,10 +144,7 @@ path_for_key () {
     TruVideoMediaUpload) echo "Libraries/Plugins/Core/MediaUpload|Libraries/Plugins/Core/MediaUpload/Sources" ;;
     TruvideoSdkCamera)   echo "Libraries/Plugins/External/Camera|Libraries/Plugins/External/Camera/Sources" ;;
     TruvideoSdkMedia)    echo "Libraries/Plugins/External/Media|Libraries/Plugins/External/Media/Sources" ;;
-    *)
-      echo ""
-      return 1
-      ;;
+    *) return 1 ;;
   esac
 }
 
@@ -140,9 +152,8 @@ apply_for_key () {
   local key="$1"
   local spec plist_root sources_root plist_path plists
 
-  spec="$(path_for_key "$key")" || true
-  if [ -z "$spec" ]; then
-    echo "ERROR: Unknown framework key '$key' in AFF."
+  if ! spec="$(path_for_key "$key")"; then
+    echo "ERROR: Unknown framework key '$key' in AFF." >&2
     exit 1
   fi
 
@@ -159,37 +170,38 @@ apply_for_key () {
   echo "  channel:      $CHANNEL"
   echo "  build:        $BUILD_NUM"
 
+  # Prove file exists + print first lines (this is what you wanted)
+  if [[ -f "$plist_path" ]]; then
+    echo "  ✅ plist exists. head:"
+    head -n 20 "$plist_path" || true
+  else
+    echo "  ⚠️ plist missing at expected path: $plist_path"
+  fi
+
   apply_plist_updates "$plist_path"
 
-  plists="$(find_plists "$sources_root" || true)"
-  if [ -n "$plists" ]; then
+  plists="$(find_plists "$sources_root")"
+  if [[ -n "$plists" ]]; then
     while IFS= read -r plist; do
-      [ -z "$plist" ] && continue
+      [[ -z "$plist" ]] && continue
+      # avoid double-processing the same path
+      [[ "$plist" == "$plist_path" ]] && continue
       apply_plist_updates "$plist"
     done <<< "$plists"
   else
     echo "⚠️ No Info.plist found under $sources_root"
   fi
-  
+
   gen_version_swift "$sources_root" "$VERSION_FULL" "$CHANNEL" "$BUILD_NUM" "$key"
 
-  if [ -d "$plist_root" ]; then
-    git add "$plist_root" || true
-  fi
-
-  if [ -f "$plist_path" ] && ! git check-ignore -q "$plist_path"; then
-    git add "$plist_path" || true
-  fi
-
-  if [ -f "$sources_root/Version.swift" ] && ! git check-ignore -q "$sources_root/Version.swift"; then
-    git add "$sources_root/Version.swift" || true
-  fi
+  git add "$plist_root" || true
+  [[ -f "$plist_path" ]] && git add "$plist_path" || true
+  [[ -f "$sources_root/Version.swift" ]] && git add "$sources_root/Version.swift" || true
 }
 
 IFS=' ' read -r -a AFFECTED <<< "$AFF"
-
 for key in "${AFFECTED[@]}"; do
-  [ -z "$key" ] && continue
+  [[ -z "$key" ]] && continue
   apply_for_key "$key"
 done
 
