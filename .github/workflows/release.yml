@@ -156,6 +156,8 @@ jobs:
           ./scripts/apply_version.sh
 
       - name: Create internal tag
+        env:
+          VERSION_FULL: ${{ steps.version.outputs.full }}
         run: |
           set -Eeuo pipefail
 
