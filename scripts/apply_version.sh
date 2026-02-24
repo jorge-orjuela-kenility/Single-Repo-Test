@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+trap 'echo "❌ Error on line $LINENO: $BASH_COMMAND" >&2' ERR
+
 AFF="${AFF:-}"
 VERSION_BASE="${VERSION_BASE:-}"
 VERSION_FULL="${VERSION_FULL:-}"
@@ -17,6 +19,32 @@ find_plists () { find "$1" -type f -name "Info.plist" 2>/dev/null || true; }
 
 read_short_ver () { /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$1" 2>/dev/null || true; }
 
+run_plistbuddy () {
+  local cmd="$1"
+  local plist="$2"
+
+  if ! output=$(/usr/libexec/PlistBuddy -c "$cmd" "$plist" 2>&1); then
+    echo "❌ PlistBuddy failed" >&2
+    echo "  plist:    $plist" >&2
+    echo "  command:  $cmd" >&2
+    echo "  stderr:" >&2
+    echo "$output" >&2
+    return 1
+  fi
+}
+
+lint_plist () {
+  local plist="$1"
+  if ! /usr/bin/plutil -lint "$plist" >/dev/null 2>&1; then
+    echo "❌ Invalid plist: $plist" >&2
+    echo "  --- head ---" >&2
+    head -n 40 "$plist" >&2 || true
+    echo "  --- plutil -p ---" >&2
+    /usr/bin/plutil -p "$plist" >&2 || true
+    return 1
+  fi
+}
+
 plist_has_key () {
   local plist="$1" key="$2"
   /usr/libexec/PlistBuddy -c "Print :$key" "$plist" >/dev/null 2>&1
@@ -25,18 +53,18 @@ plist_has_key () {
 write_short_ver () {
   local plist="$1" val="$2"
   if plist_has_key "$plist" "CFBundleShortVersionString"; then
-    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString \"$val\"" "$plist"
+    run_plistbuddy "Set :CFBundleShortVersionString \"$val\"" "$plist"
   else
-    /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string \"$val\"" "$plist"
+    run_plistbuddy "Add :CFBundleShortVersionString string \"$val\"" "$plist"
   fi
 }
 
 write_build_num () {
   local plist="$1" val="$2"
   if plist_has_key "$plist" "CFBundleVersion"; then
-    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion \"$val\"" "$plist"
+    run_plistbuddy "Set :CFBundleVersion \"$val\"" "$plist"
   else
-    /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string \"$val\"" "$plist"
+    run_plistbuddy "Add :CFBundleVersion string \"$val\"" "$plist"
   fi
 }
 
@@ -48,6 +76,8 @@ apply_plist_updates () {
     echo "⚠️ Missing plist (skipping): $plist"
     return 0
   fi
+
+  lint_plist "$plist"
 
   cur_short="$(read_short_ver "$plist")"
   if [ "$cur_short" != "$VERSION_BASE" ]; then
@@ -124,11 +154,11 @@ apply_for_key () {
   echo "  plist_root:   $plist_root"
   echo "  sources_root: $sources_root"
   echo "  plist_path:   $plist_path"
-  echo "  base:   $VERSION_BASE"
-  echo "  full:   $VERSION_FULL"
-  echo "  channel:$CHANNEL"
-  echo "  build:  $BUILD_NUM"
-  
+  echo "  base:         $VERSION_BASE"
+  echo "  full:         $VERSION_FULL"
+  echo "  channel:      $CHANNEL"
+  echo "  build:        $BUILD_NUM"
+
   apply_plist_updates "$plist_path"
 
   plists="$(find_plists "$sources_root" || true)"
@@ -138,9 +168,9 @@ apply_for_key () {
       apply_plist_updates "$plist"
     done <<< "$plists"
   else
-    echo "⚠️ No tracked Info.plist found under $sources_root"
+    echo "⚠️ No Info.plist found under $sources_root"
   fi
-
+  
   gen_version_swift "$sources_root" "$VERSION_FULL" "$CHANNEL" "$BUILD_NUM" "$key"
 
   if [ -d "$plist_root" ]; then
