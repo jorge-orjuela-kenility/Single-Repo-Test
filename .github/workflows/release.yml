@@ -165,6 +165,13 @@ jobs:
           echo "Preview:"
           cat CHANGELOG.md
 
+      - name: Build XCFrameworks
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build_frameworks.sh
+          ./scripts/build_frameworks.sh
+
       - name: Create tag
         env:
           VERSION_FULL: ${{ steps.version.outputs.full }}
@@ -186,18 +193,11 @@ jobs:
           git tag -a "$TAG" -m "chore(release): internal ${VERSION_FULL}"
           git push origin "$TAG"
 
-      - name: Build XCFrameworks
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x scripts/build_frameworks.sh
-          ./scripts/build_frameworks.sh
-
-      - name: Publish SPM repo (update Package.swift, tag, release)
+      - name: Publish SPM repo
         env:
-          VERSION_FULL: ${{ steps.compute_version.outputs.full }}
+          VERSION_FULL: ${{ steps.version.outputs.full }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REMOTE_REPO: Truvideo/truvideo-sdk-ios-core   # <-- change
+          REMOTE_REPO: Truvideo/truvideo-sdk-ios-core 
           REMOTE_BRANCH: main
         run: |
           set -Eeuo pipefail
