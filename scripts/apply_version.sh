@@ -103,15 +103,22 @@ apply_for_key () {
   echo "  channel: $CHANNEL"
   echo "  build: $BUILD_NUM"
 
-  while read -r plist; do
-    [ -z "$plist" ] && continue
-    cur_short="$(read_short_ver "$plist")"
-    if [ "$cur_short" != "$VERSION_BASE" ]; then
-      write_short_ver "$plist" "$VERSION_BASE"
-    fi
-    write_build_num "$plist" "$BUILD_NUM"
-    write_channel_key "$plist" "$CHANNEL"
-  done < <(find_plists "$sources_root")
+  plists="$(find_plists "$sources_root" || true)"
+
+  if [ -n "$plists" ]; then
+    while IFS= read -r plist; do
+      [ -z "$plist" ] && continue
+      cur_short="$(read_short_ver "$plist")"
+      if [ "$cur_short" != "$VERSION_BASE" ]; then
+        write_short_ver "$plist" "$VERSION_BASE"
+      fi
+      write_build_num "$plist" "$BUILD_NUM"
+      write_channel_key "$plist" "$CHANNEL"
+    done
+    done <<< "$plists"
+  else
+    echo "⚠️ No Info.plist found under $sources_root"
+  fi
   
   gen_version_swift "$sources_root" "$VERSION_FULL" "$CHANNEL" "$BUILD_NUM" "$key"
   
