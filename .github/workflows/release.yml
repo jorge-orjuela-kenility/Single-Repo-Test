@@ -178,35 +178,37 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          XCROOT="DerivedData/XCFrameworks"
+
+          if [ ! -d "$XCROOT" ]; then
+            echo "ERROR: Missing xcframework output folder: $XCROOT" >&2
+            exit 1
+          fi
+
           rm -rf dist
           mkdir -p dist
 
-          FRAMEWORKS=(
-            DI
-            Networking
-            StorageKit
-            TruVideoApi
-            TruVideoFoundation
-            TruVideoMediaUpload
-            TruVideoRuntime
-            TruvideoSdk
-            TruvideoSdkCamera
-          )
+          found_any=false
 
-          mapfile -t FOUND < <(find DerivedData -type d -name "*.xcframework" | sort)
+          for fw in "$XCROOT"/*.xcframework; do
+            [ -d "$fw" ] || continue
+            found_any=true
 
-          for name in "${FRAMEWORKS[@]}"; do
-            fw="$(printf '%s\n' "${FOUND[@]}" | grep -E "/${name}\.xcframework$" | head -n1 || true)"
-            if [ -z "$fw" ]; then
-              echo "ERROR: ${name}.xcframework not found in DerivedData" >&2
-              exit 1
-            fi
-
+            name="$(basename "$fw" .xcframework)"
             zip_path="dist/${name}.xcframework.zip"
-            rm -f "$zip_path"
-            echo "Zipping $(basename "$fw") -> $zip_path"
-            ( cd "$(dirname "$fw")" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/$zip_path" "$(basename "$fw")" )
+
+            echo "Zipping ${name}.xcframework -> $zip_path"
+
+            (
+              cd "$XCROOT"
+              /usr/bin/zip -qry "$GITHUB_WORKSPACE/$zip_path" "${name}.xcframework"
+            )
           done
+
+          if [ "$found_any" = false ]; then
+            echo "ERROR: No xcframeworks found in $XCROOT" >&2
+            exit 1
+          fi
 
           echo "== dist outputs =="
           ls -la dist
