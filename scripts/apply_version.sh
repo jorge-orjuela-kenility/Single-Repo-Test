@@ -105,20 +105,19 @@ apply_for_key () {
 
   while read -r plist; do
     [ -z "$plist" ] && continue
-    [ ! -f "$plist" ] && echo "  Skipping missing plist: $plist" && continue
     cur_short="$(read_short_ver "$plist")"
     if [ "$cur_short" != "$VERSION_BASE" ]; then
-      write_short_ver "$plist" "$VERSION_BASE" || { echo "  Warning: failed to write CFBundleShortVersionString to $plist"; continue; }
+      write_short_ver "$plist" "$VERSION_BASE"
     fi
-    write_build_num "$plist" "$BUILD_NUM" || echo "  Warning: failed to write CFBundleVersion to $plist"
-    write_channel_key "$plist" "$CHANNEL" || echo "  Warning: failed to write $CHANNEL_PLIST_KEY to $plist"
-  done < <(find_plists "$plist_root")
+    write_build_num "$plist" "$BUILD_NUM"
+    write_channel_key "$plist" "$CHANNEL"
+  done < <(find_plists "$sources_root")
   
   gen_version_swift "$sources_root" "$VERSION_FULL" "$CHANNEL" "$BUILD_NUM" "$key"
   
-  git add "$plist_root" 2>/dev/null || true
-  if [ -f "$sources_root/Version.swift" ] && ! git check-ignore -q "$sources_root/Version.swift" 2>/dev/null; then
-    git add "$sources_root/Version.swift" 2>/dev/null || true
+  git add "$plist_root" || true
+  if [ -f "$sources_root/Version.swift" ] && ! git check-ignore -q "$sources_root/Version.swift"; then
+    git add "$sources_root/Version.swift"
   fi
 }
 

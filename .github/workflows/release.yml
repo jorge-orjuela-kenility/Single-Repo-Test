@@ -133,21 +133,13 @@ jobs:
             echo "Missing .cut_release_scope"
             exit 1
           fi
-
-          # shellcheck source=/dev/null
+ 
           source "$GITHUB_WORKSPACE/.cut_release_scope"
 
           base="${{ steps.version.outputs.base }}"
           full="${{ steps.version.outputs.full }}"
           channel="${{ steps.version.outputs.channel }}"
           build="${{ steps.version.outputs.build }}"
-
-          echo "DEBUG VALUES:"
-          printf 'AFF=[%s]\n' "${AFF:-}"
-          printf 'base=[%s]\n' "$base"
-          printf 'full=[%s]\n' "$full"
-          printf 'channel=[%s]\n' "$channel"
-          printf 'build=[%s]\n' "$build"
           
           if [ -z "${AFF:-}" ] || [ -z "$base" ] || [ -z "$full" ] || [ -z "$channel" ] || [ -z "$build" ]; then
             echo "Missing required env vars."
