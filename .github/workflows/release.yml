@@ -159,23 +159,20 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          TAG="internal/${VERSION_FULL}"
+          TAG="internal/${VERSION_FULL:?VERSION_FULL not set}"          
 
-          echo "Creating internal tag: $TAG"
-          
           git fetch --tags
-          
+
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag already exists: $TAG"
             exit 1
           fi
 
           git config user.name "kenility-bot"
-          git config user.email "bot@tkenility.com"
+          git config user.email "bot@kenility.com"
 
           git tag -a "$TAG" -m "chore(release): internal ${VERSION_FULL}"
-
-          git push origin "$TAG"          
+          git push origin "$TAG"
 
       - name: Build XCFrameworks
         shell: bash
