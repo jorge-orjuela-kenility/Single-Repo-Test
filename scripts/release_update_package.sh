@@ -31,19 +31,20 @@ done
 : "${VERSION:?--version is required}"
 : "${CHECKSUMS:?--checksums is required}"
 
+PKG_FILE="$REPO_DIR/$PACKAGE_PATH"
+
 if [ ! -d "$REPO_DIR" ]; then
   echo "ERROR: repo dir not found: $REPO_DIR" >&2
   exit 1
 fi
 
-if [ ! -f "$CHECKSUMS" ]; then
-  echo "ERROR: checksums file not found: $CHECKSUMS" >&2
+if [ ! -f "$PKG_FILE" ]; then
+  echo "ERROR: Package.swift not found at: $PKG_FILE" >&2
   exit 1
 fi
 
-PKG_FILE="$REPO_DIR/$PACKAGE_PATH"
-if [ ! -f "$PKG_FILE" ]; then
-  echo "ERROR: Package.swift not found at: $PKG_FILE" >&2
+if [ ! -f "$CHECKSUMS" ]; then
+  echo "ERROR: checksums file not found: $CHECKSUMS" >&2
   exit 1
 fi
 
@@ -70,18 +71,25 @@ allow_missing = (sys.argv[5].lower() == "true")
 data = json.loads(checksums_path.read_text(encoding="utf-8"))
 text = pkg_path.read_text(encoding="utf-8")
 
-def make_pattern(name: str):
+def make_pattern(name: str) -> re.Pattern:
+    # Robust multiline matcher for:
+    # .binaryTarget(name: "X", url: "...", checksum: "...")
+    # Named groups avoid index errors.
     return re.compile(
-        r'(\.binaryTarget\s*\(\s*'
-        r'(?:name\s*:\s*"' + re.escape(name) + r'")'
-        r'\s*,\s*url\s*:\s*")([^"]*)("'
-        r'\s*,\s*checksum\s*:\s*")([^"]*)("'
-        r'\s*\))',
+        r'(?P<head>\.binaryTarget\s*\(\s*'
+        r'(?:name\s*:\s*"' + re.escape(name) + r'")\s*,\s*'
+        r'url\s*:\s*")'
+        r'(?P<url>[^"]*)'
+        r'(?P<middle>"\s*,\s*checksum\s*:\s*")'
+        r'(?P<checksum>[^"]*)'
+        r'(?P<tail>"\s*\))',
         re.DOTALL
     )
 
-updated = []
-missing = []
+def inject_tag_into_download_url(old_url: str, tag: str) -> str:    
+    return re.sub(r"(releases/download/)([^/]*)(/)", r"\1" + tag + r"\3", old_url, count=1)
+
+updated, missing = [], []
 
 for name, meta in data.items():
     file = meta.get("file")
@@ -95,17 +103,30 @@ for name, meta in data.items():
         missing.append(name)
         continue
 
-    old_url = m.group(2)
+    old_url = m.group("url")
 
+    # URL update priority:
+    # 1) If it has "<version>", replace placeholder
+    # 2) Else if it looks like a GitHub releases/download URL (even empty tag), inject tag
+    # 3) Else if download_base provided, reconstruct base/tag/file
+    # 4) Else keep old url
     if "<version>" in old_url:
         new_url = old_url.replace("<version>", version)
+    elif "releases/download/" in old_url:
+        new_url = inject_tag_into_download_url(old_url, version)
     elif download_base:
         new_url = f"{download_base}/{version}/{file}"
     else:
         new_url = old_url
 
-    def repl(match: re.Match):
-        return match.group(1) + new_url + match.group(3) + match.group(4) + checksum + match.group(6) + ")"
+    def repl(match: re.Match) -> str:
+        return (
+            match.group("head")
+            + new_url
+            + match.group("middle")
+            + checksum
+            + match.group("tail")
+        )
 
     text = pat.sub(repl, text, count=1)
     updated.append(name)
@@ -123,8 +144,7 @@ if missing:
         sys.exit(2)
 PY
 
-echo "✅ Package.swift updated."
-
+echo "Package.swift updated."
 (
   cd "$REPO_DIR"
   git diff -- "$PACKAGE_PATH" || true

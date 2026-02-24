@@ -245,6 +245,7 @@ jobs:
             --repo-dir "spm-repo" \
             --version "$VERSION_FULL" \
             --checksums "checksums.json"
+            --download-base "https://github.com/Truvideo/truvideo-sdk-ios-core/releases/download"
           
           chmod +x ./scripts/release_commit_tag_push.sh
           ./scripts/release_commit_tag_push.sh \
