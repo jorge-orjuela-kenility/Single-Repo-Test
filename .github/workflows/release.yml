@@ -221,6 +221,7 @@ jobs:
       - name: Publish SPM repo
         env:
           VERSION_FULL: ${{ steps.version.outputs.full }}
+          GH_EXTERNAL_PAT: ${{ secrets.GH_EXTERNAL_PAT }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REMOTE_REPO: Truvideo/truvideo-sdk-ios-core 
           REMOTE_BRANCH: main
@@ -239,8 +240,7 @@ jobs:
           set -x
 
           ROOT="$GITHUB_WORKSPACE"
-
-          # Sanity
+          
           echo "PWD=$(pwd)"
           echo "ROOT=$ROOT"
           ls -la "$ROOT" || true
@@ -266,6 +266,7 @@ jobs:
             --repo-dir "$ROOT/spm-repo" \
             --version "$VERSION_FULL" \
             --branch "$REMOTE_BRANCH"
+            --token-env GH_EXTERNAL_PAT
 
           chmod +x "$ROOT/scripts/release_create_release.sh"
           "$ROOT/scripts/release_create_release.sh" \
