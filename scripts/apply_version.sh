@@ -34,6 +34,24 @@ write_channel_key () {
     || /usr/libexec/PlistBuddy -c "Add :$key string $val" "$plist"
 }
 
+apply_plist_updates () {
+  local plist="$1"
+  [ -z "$plist" ] && return 0
+
+  if [ ! -f "$plist" ]; then
+    echo "⚠️ Missing plist (skipping): $plist"
+    return 0
+  fi
+
+  cur_short="$(read_short_ver "$plist")"
+  if [ "$cur_short" != "$VERSION_BASE" ]; then
+    write_short_ver "$plist" "$VERSION_BASE"
+  fi
+
+  write_build_num "$plist" "$BUILD_NUM"
+  write_channel_key "$plist" "$CHANNEL"
+}
+
 gen_version_swift () {
   local destdir="$1" full="$2" channel="$3" build="$4" key="$5"
   mkdir -p "$destdir"
@@ -43,7 +61,7 @@ gen_version_swift () {
     sed -i '' "s/SDKVersionNumber = \"[^\"]*\"/SDKVersionNumber = \"$full\"/" "$vfile" || true
     sed -i '' "s/SDKEnvironment = \"[^\"]*\"/SDKEnvironment = \"$channel\"/" "$vfile" || true
     sed -i '' "s/SDKBuildNumber = \"[^\"]*\"/SDKBuildNumber = \"$build\"/" "$vfile" || true
-    
+
     if [ "$key" = "TruvideoSdk" ]; then
       sed -i '' 's/SDKSecretKey = "[^"]*"/SDKSecretKey = ""/' "$vfile" || true
     fi
@@ -63,7 +81,7 @@ gen_version_swift () {
   fi
 }
 
-path_for_key () { 
+path_for_key () {
   local key="$1"
   case "$key" in
     DI)                 echo "Libraries/Foundation/Core/DI|Libraries/Foundation/Core/DI/Sources" ;;
@@ -85,45 +103,59 @@ path_for_key () {
 
 apply_for_key () {
   local key="$1"
-  local spec plist_root sources_root
+  local spec plist_root sources_root plist_path plists
+
   spec="$(path_for_key "$key")" || true
   if [ -z "$spec" ]; then
     echo "ERROR: Unknown framework key '$key' in AFF."
     exit 1
   fi
 
+  # Left side: module root folder
   plist_root="${spec%%|*}"
+  # Right side: Sources folder
   sources_root="${spec##*|}"
 
+  # Your new desired path:
+  plist_path="${plist_root}/Sources/Info.plist"
+
   echo "== Applying version for $key =="
-  echo "  plist_root: $plist_root"
+  echo "  plist_root:   $plist_root"
   echo "  sources_root: $sources_root"
-  echo "  base: $VERSION_BASE"
-  echo "  full: $VERSION_FULL"
-  echo "  channel: $CHANNEL"
-  echo "  build: $BUILD_NUM"
+  echo "  plist_path:   $plist_path"
+  echo "  base:   $VERSION_BASE"
+  echo "  full:   $VERSION_FULL"
+  echo "  channel:$CHANNEL"
+  echo "  build:  $BUILD_NUM"
 
+  # 1) Update the explicit root plist first (even if not tracked by git ls-files under sources_root)
+  apply_plist_updates "$plist_path"
+
+  # 2) Update any Info.plist files tracked under Sources
   plists="$(find_plists "$sources_root" || true)"
-
   if [ -n "$plists" ]; then
     while IFS= read -r plist; do
       [ -z "$plist" ] && continue
-      cur_short="$(read_short_ver "$plist")"
-      if [ "$cur_short" != "$VERSION_BASE" ]; then
-        write_short_ver "$plist" "$VERSION_BASE"
-      fi
-      write_build_num "$plist" "$BUILD_NUM"
-      write_channel_key "$plist" "$CHANNEL"    
+      apply_plist_updates "$plist"
     done <<< "$plists"
   else
-    echo "⚠️ No Info.plist found under $sources_root"
+    echo "⚠️ No tracked Info.plist found under $sources_root"
   fi
-  
+
+  # 3) Version.swift generation/update
   gen_version_swift "$sources_root" "$VERSION_FULL" "$CHANNEL" "$BUILD_NUM" "$key"
-  
-  git add "$plist_root" || true
+
+  # 4) Stage changes
+  if [ -d "$plist_root" ]; then
+    git add "$plist_root" || true
+  fi
+
+  if [ -f "$plist_path" ] && ! git check-ignore -q "$plist_path"; then
+    git add "$plist_path" || true
+  fi
+
   if [ -f "$sources_root/Version.swift" ] && ! git check-ignore -q "$sources_root/Version.swift"; then
-    git add "$sources_root/Version.swift"
+    git add "$sources_root/Version.swift" || true
   fi
 }
 
