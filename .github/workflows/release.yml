@@ -156,9 +156,11 @@ jobs:
           VERSION_FULL: ${{ steps.compute.outputs.full }}
           CHANNEL: ${{ steps.compute.outputs.channel }}
         run: |
-          set -Eeuo pipefail
-          chmod +x ./scripts/changelog.sh
-          ./scripts/changelog.sh
+         set -Eeuo pipefail
+         echo "VERSION_FULL=$VERSION_FULL"
+         echo "CHANNEL=$CHANNEL"
+         chmod +x ./scripts/changelog.sh
+         ./scripts/changelog.sh
 
           echo "Preview:"
           cat CHANGELOG.md
