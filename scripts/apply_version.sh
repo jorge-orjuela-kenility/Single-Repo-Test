@@ -13,7 +13,7 @@ if [ -z "$AFF" ] || [ -z "$VERSION_BASE" ] || [ -z "$VERSION_FULL" ] || [ -z "$C
   exit 1
 fi
 
-find_plists () { git ls-files "$1" | grep -E '/Info\.plist$' || true; }
+find_plists () { find "$1" -type f -name "Info.plist" 2>/dev/null || true; }
 
 read_short_ver () { /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$1" 2>/dev/null || true; }
 
