@@ -38,6 +38,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Git identity
         shell: bash
@@ -87,14 +89,13 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x scripts/compute_version.sh
-          
+
           CUT_FROM_SCOPE="${{ steps.scope.outputs.cut }}"
           CUT="${CUT_FROM_SCOPE:-}"
-          
           if [ -z "$CUT" ]; then
-            CUT="${{ inputs.cut }}"
+            CUT="${{ github.event.inputs.cut }}"
           fi
-          
+
           if [ -z "$CUT" ]; then
             echo "::notice::No cut resolved; skipping version compute."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -109,7 +110,13 @@ jobs:
           channel="$(jq -r .channel version.json)"
           build="$(jq -r .build version.json)"
 
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
       - name: Apply version changes
+        if: steps.version.outputs.skip != 'true'
         run: |
           source "$GITHUB_WORKSPACE/.cut_release_scope"
           chmod +x ./scripts/apply_version.sh

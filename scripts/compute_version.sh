@@ -14,11 +14,11 @@ bump_from_commits () {
   local range="$2"
   local bump="patch"
 
-  if git log --format=%B $range | grep -Eq 'BREAKING CHANGE|!:'; then
+  if git log --format=%B $range 2>/dev/null | grep -Eq 'BREAKING CHANGE|!:' || false; then
     bump="major"
-  elif git log --format=%s $range | grep -Eq '^feat(\(|:)|^feat!'; then
+  elif git log --format=%s $range 2>/dev/null | grep -Eq '^feat(\(|:)|^feat!' || false; then
     bump="minor"
-  elif git log --format=%s $range | grep -Eq '^fix(\(|:)|^fix!|^perf(\(|:)|^perf!'; then
+  elif git log --format=%s $range 2>/dev/null | grep -Eq '^fix(\(|:)|^fix!|^perf(\(|:)|^perf!' || false; then
     bump="patch"
   fi
 
