@@ -153,8 +153,8 @@ jobs:
       - name: Generate changelog
         id: changelog
         env:
-          VERSION_FULL: ${{ steps.compute.outputs.full }}
-          CHANNEL: ${{ steps.compute.outputs.channel }}
+          VERSION_FULL: ${{ steps.version.outputs.full }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
         run: |
          set -Eeuo pipefail
          echo "VERSION_FULL=$VERSION_FULL"
