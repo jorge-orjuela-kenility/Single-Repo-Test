@@ -222,7 +222,7 @@ jobs:
         env:
           VERSION_FULL: ${{ steps.version.outputs.full }}
           GH_EXTERNAL_PAT: ${{ secrets.GH_EXTERNAL_PAT }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          gh release create: ${{ secrets.GH_EXTERNAL_PAT }}
           REMOTE_REPO: Truvideo/truvideo-sdk-ios-core 
           REMOTE_BRANCH: main
         run: |
