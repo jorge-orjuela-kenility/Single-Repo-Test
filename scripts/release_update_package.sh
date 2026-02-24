@@ -2,146 +2,108 @@
 set -Eeuo pipefail
 
 REPO_DIR=""
-VERSION=""
-CHECKSUMS=""
-PACKAGE_PATH="Package.swift"
-DOWNLOAD_BASE=""
+PACKAGE_FILE="Package.swift"
+VERSION_TAG=""
+CHECKSUMS_FILE=""
+DOWNLOAD_BASE="https://github.com/Truvideo/truvideo-sdk-ios-core/releases/download"
 ALLOW_MISSING="false"
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --repo-dir) REPO_DIR="${2:-}"; shift 2 ;;
-    --version) VERSION="${2:-}"; shift 2 ;;
-    --checksums) CHECKSUMS="${2:-}"; shift 2 ;;
-    --package-path) PACKAGE_PATH="${2:-}"; shift 2 ;;
+    --repo-dir)      REPO_DIR="${2:-}"; shift 2 ;;
+    --package)       PACKAGE_FILE="${2:-}"; shift 2 ;;
+    --version|--tag) VERSION_TAG="${2:-}"; shift 2 ;;
+    --checksums)     CHECKSUMS_FILE="${2:-}"; shift 2 ;;
     --download-base) DOWNLOAD_BASE="${2:-}"; shift 2 ;;
-    --allow-missing) ALLOW_MISSING="true"; shift 1 ;;
-    -h|--help)
-      echo "Usage: $0 --repo-dir <dir> --version <tag> --checksums <json> [--package-path <path>] [--download-base <url>] [--allow-missing]"
-      exit 0
-      ;;
-    *)
-      echo "Unknown arg: $1" >&2
-      exit 1
-      ;;
+    --allow-missing) ALLOW_MISSING="${2:-false}"; shift 2 ;;
+    *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 
-: "${REPO_DIR:?--repo-dir is required}"
-: "${VERSION:?--version is required}"
-: "${CHECKSUMS:?--checksums is required}"
-
-PKG_FILE="$REPO_DIR/$PACKAGE_PATH"
-
-if [ ! -d "$REPO_DIR" ]; then
-  echo "ERROR: repo dir not found: $REPO_DIR" >&2
+if [ -z "$REPO_DIR" ] || [ -z "$VERSION_TAG" ] || [ -z "$CHECKSUMS_FILE" ]; then
+  echo "Missing required arguments" >&2
   exit 1
 fi
 
-if [ ! -f "$PKG_FILE" ]; then
-  echo "ERROR: Package.swift not found at: $PKG_FILE" >&2
-  exit 1
-fi
-
-if [ ! -f "$CHECKSUMS" ]; then
-  echo "ERROR: checksums file not found: $CHECKSUMS" >&2
-  exit 1
-fi
-
-DOWNLOAD_BASE="${DOWNLOAD_BASE%/}"
+PKG_PATH="$REPO_DIR/$PACKAGE_FILE"
 
 echo "== Updating Package.swift =="
 echo "  repo-dir:       $REPO_DIR"
-echo "  package:        $PACKAGE_PATH"
-echo "  version(tag):   $VERSION"
-echo "  checksums:      $CHECKSUMS"
-echo "  download-base:  ${DOWNLOAD_BASE:-<not set>}"
+echo "  package:        $PACKAGE_FILE"
+echo "  version(tag):   $VERSION_TAG"
+echo "  checksums:      $CHECKSUMS_FILE"
+echo "  download-base:  $DOWNLOAD_BASE"
 echo "  allow-missing:  $ALLOW_MISSING"
 
-python3 - "$PKG_FILE" "$CHECKSUMS" "$VERSION" "$DOWNLOAD_BASE" "$ALLOW_MISSING" <<'PY'
-import json, re, sys
-from pathlib import Path
+if [ ! -f "$PKG_PATH" ]; then
+  echo "Package.swift not found: $PKG_PATH" >&2
+  exit 1
+fi
 
-pkg_path = Path(sys.argv[1])
-checksums_path = Path(sys.argv[2])
-version = sys.argv[3]
-download_base = sys.argv[4].rstrip("/")
-allow_missing = (sys.argv[5].lower() == "true")
+if [ ! -f "$CHECKSUMS_FILE" ]; then
+  echo "checksums.json not found: $CHECKSUMS_FILE" >&2
+  exit 1
+fi
 
-data = json.loads(checksums_path.read_text(encoding="utf-8"))
-text = pkg_path.read_text(encoding="utf-8")
+REPO_DIR="$REPO_DIR" \
+PKG_PATH="$PKG_PATH" \
+VERSION_TAG="$VERSION_TAG" \
+CHECKSUMS_FILE="$CHECKSUMS_FILE" \
+DOWNLOAD_BASE="$DOWNLOAD_BASE" \
+ALLOW_MISSING="$ALLOW_MISSING" \
+python3 <<'PY'
+import json
+import os
+import re
+import sys
 
-def make_pattern(name: str) -> re.Pattern:
-    # Robust multiline matcher for:
-    # .binaryTarget(name: "X", url: "...", checksum: "...")
-    # Named groups avoid index errors.
-    return re.compile(
-        r'(?P<head>\.binaryTarget\s*\(\s*'
-        r'(?:name\s*:\s*"' + re.escape(name) + r'")\s*,\s*'
-        r'url\s*:\s*")'
-        r'(?P<url>[^"]*)'
-        r'(?P<middle>"\s*,\s*checksum\s*:\s*")'
-        r'(?P<checksum>[^"]*)'
-        r'(?P<tail>"\s*\))',
-        re.DOTALL
-    )
+pkg_path       = os.environ["PKG_PATH"]
+version_tag    = os.environ["VERSION_TAG"]
+checksums_file = os.environ["CHECKSUMS_FILE"]
+download_base  = os.environ["DOWNLOAD_BASE"].rstrip("/")
+allow_missing  = os.environ["ALLOW_MISSING"].lower() == "true"
 
-def inject_tag_into_download_url(old_url: str, tag: str) -> str:    
-    return re.sub(r"(releases/download/)([^/]*)(/)", r"\1" + tag + r"\3", old_url, count=1)
+def die(msg):
+    print(f"ERROR: {msg}", file=sys.stderr)
+    sys.exit(1)
 
-updated, missing = [], []
+def inject_tag_into_download_url(text: str, base: str, tag: str) -> str:
+    # FIX: use \g<1> instead of \1 to prevent \17 issue
+    pattern = rf"({re.escape(base)}/)([^/]+)(/)"
+    return re.sub(pattern, rf"\g<1>{tag}\g<3>", text)
 
-for name, meta in data.items():
-    file = meta.get("file")
-    checksum = meta.get("checksum")
-    if not file or not checksum:
-        raise SystemExit(f"checksums.json missing file/checksum for '{name}'")
+def update_checksums(text: str, checksums: dict) -> str:
+    for name, info in checksums.items():
+        file = info.get("file")
+        checksum = info.get("checksum")
+        if not file or not checksum:
+            continue
 
-    pat = make_pattern(name)
-    m = pat.search(text)
-    if not m:
-        missing.append(name)
-        continue
+        file_pat = re.escape(file)
+        block_pat = rf"({file_pat}.*?checksum:\s*\")([^\"]+)(\")"
+        new_text, n = re.subn(block_pat, rf"\g<1>{checksum}\g<3>", text, flags=re.DOTALL)
 
-    old_url = m.group("url")
+        if n == 0 and not allow_missing:
+            die(f"Checksum field not found for '{file}'")
 
-    # URL update priority:
-    # 1) If it has "<version>", replace placeholder
-    # 2) Else if it looks like a GitHub releases/download URL (even empty tag), inject tag
-    # 3) Else if download_base provided, reconstruct base/tag/file
-    # 4) Else keep old url
-    if "<version>" in old_url:
-        new_url = old_url.replace("<version>", version)
-    elif "releases/download/" in old_url:
-        new_url = inject_tag_into_download_url(old_url, version)
-    elif download_base:
-        new_url = f"{download_base}/{version}/{file}"
-    else:
-        new_url = old_url
+        text = new_text
+    return text
 
-    def repl(match: re.Match) -> str:
-        return (
-            match.group("head")
-            + new_url
-            + match.group("middle")
-            + checksum
-            + match.group("tail")
-        )
+with open(pkg_path, "r", encoding="utf-8") as f:
+    original = f.read()
 
-    text = pat.sub(repl, text, count=1)
-    updated.append(name)
+with open(checksums_file, "r", encoding="utf-8") as f:
+    checksums = json.load(f)
 
-pkg_path.write_text(text, encoding="utf-8")
+updated = inject_tag_into_download_url(original, download_base, version_tag)
+updated = update_checksums(updated, checksums)
 
-print("Updated targets:", ", ".join(updated) if updated else "(none)")
-
-if missing:
-    msg = "Missing binaryTarget definitions for: " + ", ".join(missing)
-    if allow_missing:
-        print("WARN:", msg)
-    else:
-        print("ERROR:", msg, file=sys.stderr)
-        sys.exit(2)
+if updated != original:
+    with open(pkg_path, "w", encoding="utf-8") as f:
+        f.write(updated)
+    print("Package.swift updated.")
+else:
+    print("No changes needed.")
 PY
 
 echo "Package.swift updated."
