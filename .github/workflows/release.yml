@@ -123,26 +123,45 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
-      - name: Apply version changes        
+      - name: Apply version changes
+        id: apply
+        shell: bash
         run: |
           set -euo pipefail
 
+          if [ ! -f "$GITHUB_WORKSPACE/.cut_release_scope" ]; then
+            echo "Missing .cut_release_scope"
+            exit 1
+          fi
+
+          # shellcheck source=/dev/null
           source "$GITHUB_WORKSPACE/.cut_release_scope"
 
+          base="${{ steps.version.outputs.base }}"
+          full="${{ steps.version.outputs.full }}"
+          channel="${{ steps.version.outputs.channel }}"
+          build="${{ steps.version.outputs.build }}"
+
           echo "DEBUG VALUES:"
-          echo "AFF=$AFF"
-          echo "BASE=${{ steps.version.outputs.base }}"
-          echo "FULL=${{ steps.version.outputs.full }}"
-          echo "CHANNEL=${{ steps.version.outputs.channel }}"
-          echo "BUILD=${{ steps.version.outputs.build }}"
+          printf 'AFF=[%s]\n' "${AFF:-}"
+          printf 'base=[%s]\n' "$base"
+          printf 'full=[%s]\n' "$full"
+          printf 'channel=[%s]\n' "$channel"
+          printf 'build=[%s]\n' "$build"
+          
+          if [ -z "${AFF:-}" ] || [ -z "$base" ] || [ -z "$full" ] || [ -z "$channel" ] || [ -z "$build" ]; then
+            echo "Missing required env vars."
+            echo "Required: AFF, VERSION_BASE, VERSION_FULL, CHANNEL, BUILD_NUM"
+            exit 1
+          fi
 
           chmod +x ./scripts/apply_version.sh
 
           AFF="$AFF" \
-          VERSION_BASE="${{ steps.version.outputs.base }}" \
-          VERSION_FULL="${{ steps.version.outputs.full }}" \
-          CHANNEL="${{ steps.version.outputs.channel }}" \
-          BUILD_NUM="${{ steps.version.outputs.build }}" \
+          VERSION_BASE="$base" \
+          VERSION_FULL="$full" \
+          CHANNEL="$channel" \
+          BUILD_NUM="$build" \
           CHANNEL_PLIST_KEY="${CHANNEL_PLIST_KEY}" \
           ./scripts/apply_version.sh
 
