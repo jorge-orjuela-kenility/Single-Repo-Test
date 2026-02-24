@@ -232,7 +232,7 @@ jobs:
           : "${GH_TOKEN:?GH_TOKEN not set}"
           
           rm -rf spm-repo
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REMOTE_REPO}.git" spm-repo
+          git clone "https://x-access-token:${GH_EXTERNAL_PAT}@github.com/Truvideo/truvideo-sdk-ios-core.git" "$GITHUB_WORKSPACE/spm-repo"
           cd spm-repo
           git checkout "${REMOTE_BRANCH}"
           
