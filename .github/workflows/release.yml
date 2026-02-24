@@ -86,23 +86,24 @@ jobs:
 
       - name: Compute version
         id: version
+        shell: bash
         run: |
           set -euo pipefail
           chmod +x scripts/compute_version.sh
 
-          CUT_FROM_SCOPE="${{ steps.scope.outputs.cut }}"
-          CUT="${CUT_FROM_SCOPE:-}"
-          if [ -z "$CUT" ]; then
-            CUT="${{ github.event.inputs.cut }}"
+          # Load scope file
+          if [ -f "$GITHUB_WORKSPACE/.cut_release_scope" ]; then
+            source "$GITHUB_WORKSPACE/.cut_release_scope"
           fi
 
-          if [ -z "$CUT" ]; then
-            echo "::notice::No cut resolved; skipping version compute."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          CUT_FINAL="${CUT:-}"
+          if [ -z "$CUT_FINAL" ]; then
+            CUT_FINAL="rc"
           fi
 
-          CUT="$CUT" ./scripts/compute_version.sh > version.json
+          echo "Using CUT=$CUT_FINAL"
+
+          CUT="$CUT_FINAL" ./scripts/compute_version.sh > version.json
           cat version.json
 
           base="$(jq -r .base version.json)"
@@ -110,19 +111,39 @@ jobs:
           channel="$(jq -r .channel version.json)"
           build="$(jq -r .build version.json)"
 
+          # Fail early if parsing failed
+          if [ -z "$base" ] || [ "$base" = "null" ]; then
+            echo "Version parsing failed."
+            exit 1
+          fi
+
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
       - name: Apply version changes        
         run: |
           set -euo pipefail
+
           source "$GITHUB_WORKSPACE/.cut_release_scope"
+
+          echo "DEBUG VALUES:"
+          echo "AFF=$AFF"
+          echo "BASE=${{ steps.version.outputs.base }}"
+          echo "FULL=${{ steps.version.outputs.full }}"
+          echo "CHANNEL=${{ steps.version.outputs.channel }}"
+          echo "BUILD=${{ steps.version.outputs.build }}"
 
           chmod +x ./scripts/apply_version.sh
 
+          AFF="$AFF" \
           VERSION_BASE="${{ steps.version.outputs.base }}" \
           VERSION_FULL="${{ steps.version.outputs.full }}" \
           CHANNEL="${{ steps.version.outputs.channel }}" \
           BUILD_NUM="${{ steps.version.outputs.build }}" \
           CHANNEL_PLIST_KEY="${CHANNEL_PLIST_KEY}" \
-          AFF="$AFF" \
           ./scripts/apply_version.sh
 
       - name: Build XCFrameworks
