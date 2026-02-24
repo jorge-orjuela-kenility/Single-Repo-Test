@@ -81,8 +81,8 @@ jobs:
       - name: Generate project
         run: make generate
 
-      - name: Build project
-        run: make build SIM_DEST="generic/platform=iOS Simulator"
+      #- name: Build project
+       # run: make build SIM_DEST="generic/platform=iOS Simulator"
 
       - name: Compute version
         id: version
