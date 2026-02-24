@@ -85,13 +85,11 @@ BUILD=""
 if [ "$CUT" = "rc" ]; then
   CHANNEL="RC"
 
-  if echo "$latest_tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-RC\.[0-9]+$'; then
-    # Continue RC series for same base
+  if echo "$latest_tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-RC\.[0-9]+$'; then    
     BASE="$(rc_base_from_tag "$latest_tag")"
     BUILD="$(next_rc_build "$BASE")"
     FULL="${BASE}-RC.${BUILD}"
-  else
-    # Latest is PROD (or no tags): bump base from commits
+  else    
     BASE="$(bump_from_commits "$last_prod" "$RANGE")"
     BUILD="1"
     FULL="${BASE}-RC.${BUILD}"
@@ -99,8 +97,7 @@ if [ "$CUT" = "rc" ]; then
 
 elif [ "$CUT" = "prod" ]; then
   CHANNEL="PROD"
-
-  # If latest tag is RC, promote its base; else bump from commits
+  
   if echo "$latest_tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-RC\.[0-9]+$'; then
     BASE="$(rc_base_from_tag "$latest_tag")"
     FULL="$BASE"
