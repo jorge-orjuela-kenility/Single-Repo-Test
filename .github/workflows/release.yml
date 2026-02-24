@@ -267,10 +267,22 @@ jobs:
             --version "$VERSION_FULL" \
             --branch "$REMOTE_BRANCH"            
 
+           PRERELEASE_FLAG=""
+          if [ -f "$GITHUB_WORKSPACE/.cut_release_scope" ]; then
+            source "$GITHUB_WORKSPACE/.cut_release_scope"
+          fi
+
+          CUT_FINAL="${CUT:-rc}"
+          if [[ "$CUT_FINAL" == "rc" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          echo "CUT=$CUT_FINAL → PRERELEASE_FLAG=$PRERELEASE_FLAG"
+
           chmod +x "$ROOT/scripts/release_create_release.sh"
           "$ROOT/scripts/release_create_release.sh" \
             --repo "$REMOTE_REPO" \
             --version "$VERSION_FULL" \
             --notes-file "$ROOT/CHANGELOG.md" \
             --assets-glob "$ROOT/dist/*.xcframework.zip" \
-            --prerelease
+            $PRERELEASE_FLAG
