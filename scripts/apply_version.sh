@@ -113,8 +113,7 @@ apply_for_key () {
         write_short_ver "$plist" "$VERSION_BASE"
       fi
       write_build_num "$plist" "$BUILD_NUM"
-      write_channel_key "$plist" "$CHANNEL"
-    done
+      write_channel_key "$plist" "$CHANNEL"    
     done <<< "$plists"
   else
     echo "⚠️ No Info.plist found under $sources_root"
