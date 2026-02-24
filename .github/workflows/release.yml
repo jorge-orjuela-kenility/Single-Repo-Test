@@ -157,8 +157,8 @@ jobs:
           CHANNEL: ${{ steps.compute.outputs.channel }}
         run: |
           set -Eeuo pipefail
-          chmod +x ./changelog.sh
-          ./changelog.sh
+          chmod +x ./scripts/changelog.sh
+          ./scripts/changelog.sh
 
           echo "Preview:"
           cat CHANGELOG.md
