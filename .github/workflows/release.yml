@@ -167,6 +167,8 @@ jobs:
 
       - name: Build XCFrameworks
         shell: bash
+        env:
+          SIM_DEST: generic/platform=iOS Simulator
         run: |
           set -Eeuo pipefail
           make xcframeworks
