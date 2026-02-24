@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-DIR="DerivedData/XCFrameworks"
+DIR="dist"
 OUT=""
 
 while [ $# -gt 0 ]; do

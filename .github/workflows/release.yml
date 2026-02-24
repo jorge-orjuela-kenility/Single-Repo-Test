@@ -173,6 +173,30 @@ jobs:
           set -Eeuo pipefail
           make xcframeworks
 
+      - name: Zip frameworks artifacts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf dist
+          mkdir -p dist
+          
+          find DerivedData -type d -name "*.xcframework" -print || true
+ 
+          while IFS= read -r fw; do
+            name="$(basename "$fw")" 
+            zip_path="dist/${name}.zip"
+
+            rm -f "$zip_path"
+            echo "Zipping $name -> $zip_path"
+
+            ( cd "$(dirname "$fw")" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/$zip_path" "$name" )
+          done < <(find DerivedData -type d -name "*.xcframework" | sort)
+
+          echo "== dist outputs =="
+          ls -la dist
+          find dist -maxdepth 1 -type f -name "*.xcframework.zip" -print
+
       - name: Debug artifacts location
         run: |
           set -Eeuo pipefail
