@@ -13,11 +13,6 @@ on:
         type: choice
         options: [rc, prod]
         required: false
-      dry_run:
-        description: "Preview only"
-        type: boolean
-        default: false
-        required: false
 
 permissions:
   contents: write
@@ -155,7 +150,20 @@ jobs:
           BUILD_NUM="$build" \
           ./scripts/apply_version.sh
 
-      - name: Create internal tag
+      - name: Generate changelog
+        id: changelog
+        env:
+          VERSION_FULL: ${{ steps.compute.outputs.full }}
+          CHANNEL: ${{ steps.compute.outputs.channel }}
+        run: |
+          set -Eeuo pipefail
+          chmod +x ./changelog.sh
+          ./changelog.sh
+
+          echo "Preview:"
+          cat CHANGELOG.md
+
+      - name: Create tag
         env:
           VERSION_FULL: ${{ steps.version.outputs.full }}
         run: |
