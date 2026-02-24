@@ -265,7 +265,7 @@ jobs:
           "$ROOT/scripts/release_commit_tag_push.sh" \
             --repo-dir "$ROOT/spm-repo" \
             --version "$VERSION_FULL" \
-            --branch "$REMOTE_BRANCH"
+            --branch "$REMOTE_BRANCH" \
             --token-env GH_EXTERNAL_PAT
 
           chmod +x "$ROOT/scripts/release_create_release.sh"
