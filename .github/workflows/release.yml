@@ -75,8 +75,8 @@ jobs:
       - name: Generate project
         run: make generate
 
-      #- name: Build project
-       # run: make build SIM_DEST="generic/platform=iOS Simulator"
+      - name: Build project
+        run: make build SIM_DEST="generic/platform=iOS Simulator"
 
       - name: Compute version
         id: version
@@ -165,37 +165,37 @@ jobs:
           echo "Preview:"
           cat CHANGELOG.md
 
-     # - name: Build XCFrameworks
-     #   shell: bash
-     #   env:
-     #     SIM_DEST: generic/platform=iOS Simulator
-     #   run: |
-     #     set -Eeuo pipefail
-     #     make xcframeworks
+      - name: Build XCFrameworks
+        shell: bash
+        env:
+          SIM_DEST: generic/platform=iOS Simulator
+        run: |
+          set -Eeuo pipefail
+          make xcframeworks
 
-     # - name: Zip frameworks artifacts
-      #  shell: bash
-      #  run: |
-       #   set -Eeuo pipefail
+      - name: Zip frameworks artifacts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
-        #  rm -rf dist
-         # mkdir -p dist
+          rm -rf dist
+          mkdir -p dist
           
-          #find DerivedData -type d -name "*.xcframework" -print || true
+          find DerivedData -type d -name "*.xcframework" -print || true
  
-          #while IFS= read -r fw; do
-          #  name="$(basename "$fw")" 
-          #  zip_path="dist/${name}.zip"
+          while IFS= read -r fw; do
+            name="$(basename "$fw")" 
+            zip_path="dist/${name}.zip"
 
-          #  rm -f "$zip_path"
-          #  echo "Zipping $name -> $zip_path"
+            rm -f "$zip_path"
+            echo "Zipping $name -> $zip_path"
 
-          #  ( cd "$(dirname "$fw")" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/$zip_path" "$name" )
-          #done < <(find DerivedData -type d -name "*.xcframework" | sort)
+            ( cd "$(dirname "$fw")" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/$zip_path" "$name" )
+          done < <(find DerivedData -type d -name "*.xcframework" | sort)
 
-        #  echo "== dist outputs =="
-        #  ls -la dist
-        #  find dist -maxdepth 1 -type f -name "*.xcframework.zip" -print
+          echo "== dist outputs =="
+          ls -la dist
+          find dist -maxdepth 1 -type f -name "*.xcframework.zip" -print
 
       - name: Create tag
         env:

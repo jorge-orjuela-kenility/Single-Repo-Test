@@ -34,17 +34,28 @@ RANGE="${since_ref:+${since_ref}..}HEAD"
 bump_from_commits () {
   local last_base="$1"
   local range="$2"
-  local bump="patch"
-
-  if [ "$(git log --format=%B $range 2>/dev/null | grep -c -E 'BREAKING CHANGE|!:' || true)" -gt 0 ]; then
-    bump="major"
-  elif [ "$(git log --format=%s $range 2>/dev/null | grep -c -E '^feat(\(|:)|^feat!' || true)" -gt 0 ]; then
-    bump="minor"
-  fi
-
+  
   if [ -z "$last_base" ]; then
     echo "0.1.0"
     return
+  fi
+
+  local subjects bodies bump="none"
+
+  subjects="$(git log --format=%s $range 2>/dev/null || true)"
+  bodies="$(git log --format=%B $range 2>/dev/null || true)"
+  
+  if echo "$bodies" | grep -q -E 'BREAKING CHANGE' || echo "$subjects" | grep -q -E '!:'; then
+    bump="major"
+  
+  elif echo "$subjects" | grep -q -E '^feat(\([^)]+\))?:' || echo "$subjects" | grep -q -E '^feat!'; then
+    bump="minor"
+  
+  elif echo "$subjects" | grep -q -E '^(fix|perf|refactor|revert)(\([^)]+\))?:' ; then
+    bump="patch"
+
+  else
+    bump="none"
   fi
 
   IFS='.' read -r major minor patch <<< "$last_base"
@@ -52,7 +63,9 @@ bump_from_commits () {
     major) major=$((major+1)); minor=0; patch=0 ;;
     minor) minor=$((minor+1)); patch=0 ;;
     patch) patch=$((patch+1)) ;;
+    none)  ;; # keep last_base
   esac
+
   echo "${major}.${minor}.${patch}"
 }
 
