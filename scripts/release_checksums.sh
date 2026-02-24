@@ -34,7 +34,7 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
-mapfile -t ZIPS < <(find "$DIR" -type f -name "*.xcframework.zip" | sort)
+ZIPS="$(find "$DIR" -type f -name "*.xcframework.zip" | sort || true)"
 
 if [ "${#ZIPS[@]}" -eq 0 ]; then
   echo "ERROR: No *.xcframework.zip files found under: $DIR" >&2
