@@ -123,7 +123,11 @@ gen_version_swift () {
       echo "let SDKVersionNumber = \"$full\""
       echo "let SDKEnvironment = \"$channel\""
       echo "let SDKBuildNumber = \"$build\""
-      [ "$key" = "TruvideoSdk" ] && echo 'let SDKSecretKey = ""'
+
+      # ✅ IMPORTANT: use an if block so false doesn't kill the script under set -e
+      if [ "$key" = "TruvideoSdk" ]; then
+        echo 'let SDKSecretKey = ""'
+      fi
     } > "$vfile"
   fi
 }
