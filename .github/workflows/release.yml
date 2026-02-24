@@ -238,7 +238,7 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           
           chmod +x ./scripts/release_checksums.sh
-          ./scripts/release_checksums.sh "dist/XCFrameworks" > checksums.json
+          ./scripts/release_checksums.sh "dist" > checksums.json
           
           chmod +x ./scripts/release_update_package.sh
           ./scripts/release_update_package.sh \
