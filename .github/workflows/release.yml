@@ -168,9 +168,8 @@ jobs:
       - name: Build XCFrameworks
         shell: bash
         run: |
-          set -euo pipefail
-          chmod +x scripts/build_frameworks.sh
-          ./scripts/build_frameworks.sh
+          set -Eeuo pipefail
+          make xcframeworks
 
       - name: Debug artifacts location
         run: |
@@ -223,7 +222,7 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           
           chmod +x ./scripts/release_checksums.sh
-          ./scripts/release_checksums.sh "dist" > checksums.json
+          ./scripts/release_checksums.sh "DerivedData/XCFrameworks" > checksums.json
           
           chmod +x ./scripts/release_update_package.sh
           ./scripts/release_update_package.sh \
