@@ -235,27 +235,42 @@ jobs:
           cd spm-repo
           git checkout "${REMOTE_BRANCH}"
           
-          cd "$GITHUB_WORKSPACE"
-          
-          chmod +x "$GITHUB_WORKSPACE/scripts/release_checksums.sh"
-          "$GITHUB_WORKSPACE/scripts/release_checksums.sh" "dist" > checksums.json
-          
-          chmod +x "$GITHUB_WORKSPACE/scripts/release_update_package.sh"
-          "$GITHUB_WORKSPACE/scripts/release_update_package.sh" \
-            --repo-dir "spm-repo" \
+          set -Eeuo pipefail
+          set -x
+
+          ROOT="$GITHUB_WORKSPACE"
+
+          # Sanity
+          echo "PWD=$(pwd)"
+          echo "ROOT=$ROOT"
+          ls -la "$ROOT" || true
+          ls -la "$ROOT/scripts" || true
+          ls -la "$ROOT/spm-repo" || true
+          command -v gh || true
+          command -v swift || true
+          command -v python3 || true
+          command -v zip || true
+
+          chmod +x "$ROOT/scripts/release_checksums.sh"
+          "$ROOT/scripts/release_checksums.sh" --dir "$ROOT/dist" --out "$ROOT/checksums.json"
+
+          chmod +x "$ROOT/scripts/release_update_package.sh"
+          "$ROOT/scripts/release_update_package.sh" \
+            --repo-dir "$ROOT/spm-repo" \
             --version "$VERSION_FULL" \
-            --checksums "checksums.json"
+            --checksums "$ROOT/checksums.json" \
             --download-base "https://github.com/Truvideo/truvideo-sdk-ios-core/releases/download"
-          
-          chmod +x "$GITHUB_WORKSPACE/scripts/release_commit_tag_push.sh"
-          "$GITHUB_WORKSPACE/scripts/release_commit_tag_push.sh" \
-            --repo-dir "spm-repo" \
+
+          chmod +x "$ROOT/scripts/release_commit_tag_push.sh"
+          "$ROOT/scripts/release_commit_tag_push.sh" \
+            --repo-dir "$ROOT/spm-repo" \
             --version "$VERSION_FULL" \
             --branch "$REMOTE_BRANCH"
-          
-          chmod +x "$GITHUB_WORKSPACE/scripts/release_create_release.sh"
-          "$GITHUB_WORKSPACE/scripts/release_create_release.sh" \
-            --repo "${REMOTE_REPO}" \
+
+          chmod +x "$ROOT/scripts/release_create_release.sh"
+          "$ROOT/scripts/release_create_release.sh" \
+            --repo "$REMOTE_REPO" \
             --version "$VERSION_FULL" \
-            --notes-file "CHANGELOG.md" \
-            --assets-glob "dist/*.xcframework.zip"
+            --notes-file "$ROOT/CHANGELOG.md" \
+            --assets-glob "$ROOT/dist/*.xcframework.zip" \
+            --prerelease
