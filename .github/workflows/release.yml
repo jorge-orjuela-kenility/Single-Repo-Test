@@ -31,8 +31,7 @@ jobs:
     runs-on: macos-15
 
     env:
-      LBL_RC: cut-rc
-      CHANNEL_PLIST_KEY: "TRVReleaseChannel"
+      LBL_RC: cut-rc      
       GH_TOKEN: ${{ secrets.GH_EXTERNAL_PAT }}
       SPM_CLONE_DIR: ${{ github.workspace }}/.spm-checkouts
 
@@ -164,7 +163,6 @@ jobs:
           VERSION_FULL="$full" \
           CHANNEL="$channel" \
           BUILD_NUM="$build" \
-          CHANNEL_PLIST_KEY="${CHANNEL_PLIST_KEY}" \
           ./scripts/apply_version.sh
 
       - name: Build XCFrameworks

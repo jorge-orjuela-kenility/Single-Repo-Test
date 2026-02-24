@@ -6,7 +6,6 @@ VERSION_BASE="${VERSION_BASE:-}"
 VERSION_FULL="${VERSION_FULL:-}"
 CHANNEL="${CHANNEL:-}"
 BUILD_NUM="${BUILD_NUM:-}"
-CHANNEL_PLIST_KEY="${CHANNEL_PLIST_KEY:-TRVReleaseChannel}"
 
 if [ -z "$AFF" ] || [ -z "$VERSION_BASE" ] || [ -z "$VERSION_FULL" ] || [ -z "$CHANNEL" ] || [ -z "$BUILD_NUM" ]; then
   echo "Missing required env vars."
@@ -18,20 +17,27 @@ find_plists () { git ls-files "$1" | grep -E '/Info\.plist$' || true; }
 
 read_short_ver () { /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$1" 2>/dev/null || true; }
 
+plist_has_key () {
+  local plist="$1" key="$2"
+  /usr/libexec/PlistBuddy -c "Print :$key" "$plist" >/dev/null 2>&1
+}
+
 write_short_ver () {
-  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $2" "$1" \
-    || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $2" "$1"
+  local plist="$1" val="$2"
+  if plist_has_key "$plist" "CFBundleShortVersionString"; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString \"$val\"" "$plist"
+  else
+    /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string \"$val\"" "$plist"
+  fi
 }
 
 write_build_num () {
-  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $2" "$1" \
-    || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $2" "$1"
-}
-
-write_channel_key () {
-  local plist="$1" val="$2" key="$CHANNEL_PLIST_KEY"
-  /usr/libexec/PlistBuddy -c "Set :$key $val" "$plist" \
-    || /usr/libexec/PlistBuddy -c "Add :$key string $val" "$plist"
+  local plist="$1" val="$2"
+  if plist_has_key "$plist" "CFBundleVersion"; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion \"$val\"" "$plist"
+  else
+    /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string \"$val\"" "$plist"
+  fi
 }
 
 apply_plist_updates () {
@@ -49,7 +55,6 @@ apply_plist_updates () {
   fi
 
   write_build_num "$plist" "$BUILD_NUM"
-  write_channel_key "$plist" "$CHANNEL"
 }
 
 gen_version_swift () {
@@ -84,16 +89,16 @@ gen_version_swift () {
 path_for_key () {
   local key="$1"
   case "$key" in
-    DI)                 echo "Libraries/Foundation/Core/DI|Libraries/Foundation/Core/DI/Sources" ;;
-    TruVideoRuntime)    echo "Libraries/Foundation/Core/Runtime|Libraries/Foundation/Core/Runtime/Sources" ;;
-    StorageKit)         echo "Libraries/Foundation/Extended/Storage|Libraries/Foundation/Extended/Storage/Sources" ;;
-    TruVideoFoundation) echo "Libraries/Foundation/Core/Foundation|Libraries/Foundation/Core/Foundation/Sources" ;;
-    Networking)         echo "Libraries/Internal/Core/Networking|Libraries/Internal/Core/Networking/Sources" ;;
-    TruVideoApi)        echo "Libraries/Internal/Extended/TruVideoApi|Libraries/Internal/Extended/TruVideoApi/Sources" ;;
-    TruvideoSdk)        echo "Libraries/External/Extended/App|Libraries/External/Extended/App/Sources" ;;
-    TruVideoMediaUpload)echo "Libraries/Plugins/Core/MediaUpload|Libraries/Plugins/Core/MediaUpload/Sources" ;;
-    TruvideoSdkCamera)  echo "Libraries/Plugins/External/Camera|Libraries/Plugins/External/Camera/Sources" ;;
-    TruvideoSdkMedia)   echo "Libraries/Plugins/External/Media|Libraries/Plugins/External/Media/Sources" ;;
+    DI)                  echo "Libraries/Foundation/Core/DI|Libraries/Foundation/Core/DI/Sources" ;;
+    TruVideoRuntime)     echo "Libraries/Foundation/Core/Runtime|Libraries/Foundation/Core/Runtime/Sources" ;;
+    StorageKit)          echo "Libraries/Foundation/Extended/Storage|Libraries/Foundation/Extended/Storage/Sources" ;;
+    TruVideoFoundation)  echo "Libraries/Foundation/Core/Foundation|Libraries/Foundation/Core/Foundation/Sources" ;;
+    Networking)          echo "Libraries/Internal/Core/Networking|Libraries/Internal/Core/Networking/Sources" ;;
+    TruVideoApi)         echo "Libraries/Internal/Extended/TruVideoApi|Libraries/Internal/Extended/TruVideoApi/Sources" ;;
+    TruvideoSdk)         echo "Libraries/External/Extended/App|Libraries/External/Extended/App/Sources" ;;
+    TruVideoMediaUpload) echo "Libraries/Plugins/Core/MediaUpload|Libraries/Plugins/Core/MediaUpload/Sources" ;;
+    TruvideoSdkCamera)   echo "Libraries/Plugins/External/Camera|Libraries/Plugins/External/Camera/Sources" ;;
+    TruvideoSdkMedia)    echo "Libraries/Plugins/External/Media|Libraries/Plugins/External/Media/Sources" ;;
     *)
       echo ""
       return 1
@@ -111,12 +116,8 @@ apply_for_key () {
     exit 1
   fi
 
-  # Left side: module root folder
   plist_root="${spec%%|*}"
-  # Right side: Sources folder
   sources_root="${spec##*|}"
-
-  # Your new desired path:
   plist_path="${plist_root}/Sources/Info.plist"
 
   echo "== Applying version for $key =="
@@ -127,11 +128,9 @@ apply_for_key () {
   echo "  full:   $VERSION_FULL"
   echo "  channel:$CHANNEL"
   echo "  build:  $BUILD_NUM"
-
-  # 1) Update the explicit root plist first (even if not tracked by git ls-files under sources_root)
+  
   apply_plist_updates "$plist_path"
 
-  # 2) Update any Info.plist files tracked under Sources
   plists="$(find_plists "$sources_root" || true)"
   if [ -n "$plists" ]; then
     while IFS= read -r plist; do
@@ -142,10 +141,8 @@ apply_for_key () {
     echo "⚠️ No tracked Info.plist found under $sources_root"
   fi
 
-  # 3) Version.swift generation/update
   gen_version_swift "$sources_root" "$VERSION_FULL" "$CHANNEL" "$BUILD_NUM" "$key"
 
-  # 4) Stage changes
   if [ -d "$plist_root" ]; then
     git add "$plist_root" || true
   fi
