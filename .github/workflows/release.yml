@@ -172,6 +172,16 @@ jobs:
           chmod +x scripts/build_frameworks.sh
           ./scripts/build_frameworks.sh
 
+      - name: Debug artifacts location
+        run: |
+          set -Eeuo pipefail
+          echo "PWD=$(pwd)"
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "--- workspace root ---"
+          ls -la "$GITHUB_WORKSPACE"
+          echo "--- find xcframework zips ---"
+          find "$GITHUB_WORKSPACE" -maxdepth 4 -type f -name "*.xcframework.zip" -print || true
+
       - name: Create tag
         env:
           VERSION_FULL: ${{ steps.version.outputs.full }}
