@@ -12,8 +12,8 @@ while [ $# -gt 0 ]; do
       echo "Usage: $0 [--dir <dir>] [--out <file>]"
       exit 0
       ;;
-    *)      
-      if [ "$DIR" = "dist" ] && [ -n "$1" ] && [ "${1:0:2}" != "--" ]; then
+    *)
+      if [ "$DIR" = "dist" ] && [ -n "$1" ] && [ "${1#--}" = "$1" ]; then
         DIR="$1"
         shift 1
       else
@@ -34,14 +34,15 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
+# String list (newline-separated), bash-3 safe
 ZIPS="$(find "$DIR" -type f -name "*.xcframework.zip" | sort || true)"
 
-if [ "${#ZIPS[@]}" -eq 0 ]; then
+if [ -z "$ZIPS" ]; then
   echo "ERROR: No *.xcframework.zip files found under: $DIR" >&2
   exit 1
 fi
 
-json_escape() {  
+json_escape() {
   printf "%s" "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
@@ -51,7 +52,13 @@ first="true"
 echo "== Computing SwiftPM checksums ==" >&2
 echo "Directory: $DIR" >&2
 
-for zip in "${ZIPS[@]}"; do
+# Avoid piping into while (subshell). Use a temp file.
+tmp="$(mktemp)"
+printf "%s\n" "$ZIPS" > "$tmp"
+
+while IFS= read -r zip; do
+  [ -z "$zip" ] && continue
+
   file="$(basename "$zip")"
   name="${file%.xcframework.zip}"
 
@@ -59,14 +66,15 @@ for zip in "${ZIPS[@]}"; do
 
   if [ ! -f "$zip" ]; then
     echo "ERROR: Missing file: $zip" >&2
+    rm -f "$tmp"
     exit 1
   fi
 
-  # SwiftPM checksum (must use this for binaryTarget)
   checksum="$(swift package compute-checksum "$zip" 2>/dev/null || true)"
   if [ -z "$checksum" ]; then
     echo "ERROR: Failed to compute checksum for: $zip" >&2
     echo "       Ensure the file is a valid zip and swift toolchain is available." >&2
+    rm -f "$tmp"
     exit 1
   fi
 
@@ -81,8 +89,9 @@ for zip in "${ZIPS[@]}"; do
   fi
 
   buf+="\"${esc_name}\":{\"file\":\"${esc_file}\",\"checksum\":\"${esc_sum}\"}"
-done
+done < "$tmp"
 
+rm -f "$tmp"
 buf+="}"
 
 if [ -n "$OUT" ]; then
