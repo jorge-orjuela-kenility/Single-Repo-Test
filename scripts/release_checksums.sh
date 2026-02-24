@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-DIR="dist"
+DIR="DerivedData/XCFrameworks"
 OUT=""
 
 while [ $# -gt 0 ]; do
@@ -34,7 +34,6 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
-# Find zips (sorted for deterministic output)
 mapfile -t ZIPS < <(find "$DIR" -type f -name "*.xcframework.zip" | sort)
 
 if [ "${#ZIPS[@]}" -eq 0 ]; then
