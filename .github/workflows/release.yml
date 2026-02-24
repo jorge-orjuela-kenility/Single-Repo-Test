@@ -80,16 +80,6 @@ jobs:
       - name: Generate project
         run: make generate
 
-      - name: Debug Tree view
-        run: |
-          set -euo pipefail
-          if command -v tree >/dev/null; then
-            tree -L 6
-          else
-            echo "tree not installed, falling back to find"
-            find . -maxdepth 6 -print | sort
-          fi
-
       #- name: Build project
        # run: make build SIM_DEST="generic/platform=iOS Simulator"
 
@@ -169,5 +159,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x scripts/build_xcframeworks.sh
-          ./scripts/build_xcframeworks.sh
+          chmod +x scripts/build_frameworks.sh
+          ./scripts/build_frameworks.sh
