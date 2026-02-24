@@ -110,14 +110,10 @@ jobs:
           channel="$(jq -r .channel version.json)"
           build="$(jq -r .build version.json)"
 
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "full=$full" >> "$GITHUB_OUTPUT"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "build=$build" >> "$GITHUB_OUTPUT"
-
       - name: Apply version changes
         if: steps.version.outputs.skip != 'true'
         run: |
+          cd "$GITHUB_WORKSPACE"
           source "$GITHUB_WORKSPACE/.cut_release_scope"
           chmod +x ./scripts/apply_version.sh
 
