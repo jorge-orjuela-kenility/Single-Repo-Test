@@ -10,8 +10,7 @@ CURRENT_TAG="$VERSION_FULL"
 
 pattern="*"
 case "${CHANNEL}" in
-  RC) pattern="*.RC-*" ;;
-  BETA) pattern="*.BETA-*" ;;
+  RC) pattern="*-RC.*" ;;
   PROD) pattern="*" ;;
 esac
 
