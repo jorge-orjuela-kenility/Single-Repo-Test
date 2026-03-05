@@ -1,6 +1,11 @@
 name: Release
 
 on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - "release/*"
   workflow_dispatch:
     inputs:
       cut:
@@ -52,26 +57,8 @@ jobs:
 
       - name: Select Xcode
         run: |
-           sudo xcode-select -s /Applications/Xcode_16.0.app
-           echo "DEVELOPER_DIR=$(xcode-select -p)"
-           which xcodebuild
-           xcodebuild -version
-
-      - name: Xcode launch
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          sudo xcode-select -s /Applications/Xcode_16.0.app
-          export DEVELOPER_DIR="$(xcode-select -p)"
-          echo "DEVELOPER_DIR=$DEVELOPER_DIR"
-          xcodebuild -version          
-          xcrun simctl shutdown all || true
-          killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
-          
-          sudo -E xcodebuild -runFirstLaunch          
-          xcodebuild -downloadPlatform iOS
-          xcodebuild -showsdks
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
 
       - name: Cache SwiftPM state
         uses: actions/cache@v4
@@ -85,20 +72,11 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-
 
-      - name: Pick a simulator destination
-        id: sim
-        shell: bash
-        run: |
-          set -euo pipefail          
-          DEV_NAME="$(xcrun simctl list devices available | grep -Eo 'iPhone[^()]+' | head -n 1 | sed 's/[[:space:]]*$//')"
-          echo "Using simulator: $DEV_NAME"
-          echo "dest=platform=iOS Simulator,name=$DEV_NAME" >> "$GITHUB_OUTPUT"
-
       - name: Generate project
         run: make generate
 
       - name: Build project
-        run: make build SIM_DEST="${{ steps.sim.outputs.dest }}"
+        run: make build SIM_DEST="generic/platform=iOS Simulator"
 
       - name: Compute version
         id: version
@@ -190,7 +168,7 @@ jobs:
       - name: Build XCFrameworks
         shell: bash
         env:
-          SIM_DEST: "${{ steps.sim.outputs.dest }}"
+          SIM_DEST: generic/platform=iOS Simulator
         run: |
           set -Eeuo pipefail
           make xcframeworks
