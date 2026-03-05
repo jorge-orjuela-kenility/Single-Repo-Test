@@ -1,15 +1,14 @@
 //
-//  TruvideoSdkVideoMergerImplementation.swift
+//  TruvideoSdkVideoMergeEngine.swift
 //  TruvideoSdkVideo
 //
 //  Created by Luis Francisco Piura Mejia on 1/12/23.
 //
 
-import Foundation
 import AVKit
+import Foundation
 
 final class TruvideoSdkVideoMergeEngine: TruvideoSdkVideoRequestEngine {
-    
     private let commandGenerator: FFMPEGMergeCommandGenerator
     private let commandExecutor: FFMPEGCommandExecutor
     private let credentialsManager: TruvideoCredentialsManager
@@ -17,7 +16,7 @@ final class TruvideoSdkVideoMergeEngine: TruvideoSdkVideoRequestEngine {
     private let store: VideoStore
     private let videosInformationGenerator: VideosInformationGenerator
     private let videosValidator: TruvideoSdkVideoFileValidator
-    
+
     init(
         credentialsManager: TruvideoCredentialsManager = TruvideoCredentialsManagerImp(),
         commandGenerator: FFMPEGMergeCommandGenerator = FFMPEGMergeCommandGenerator(),
@@ -33,7 +32,7 @@ final class TruvideoSdkVideoMergeEngine: TruvideoSdkVideoRequestEngine {
         self.videosValidator = videosValidator
         self.store = store
     }
-    
+
     func process(request: TruvideoSdkVideoRequest) async throws -> TruvideoSdkVideoRequest.Result {
         try validateAuthentication()
         try validateRequestStatus(request: request)
@@ -42,11 +41,11 @@ final class TruvideoSdkVideoMergeEngine: TruvideoSdkVideoRequestEngine {
             throw TruvideoSdkVideoError.mergeFailed
         }
         let videos = mergeData.videos
-        
+
         try videosValidator.validateVideosExistence(videos: videos, minVideosCount: 2)
         try validateResolution(component: mergeData.width)
         try validateResolution(component: mergeData.height)
-        
+
         let videosInfo = try await videosInformationGenerator.generateAssetsMetadata(videos: mergeData.videos)
         guard let outputURL = request.output.url(fileExtension: FileExtension.mp4.rawValue) else {
             throw TruvideoSdkVideoError.unableToProcessOutput
@@ -76,7 +75,7 @@ final class TruvideoSdkVideoMergeEngine: TruvideoSdkVideoRequestEngine {
             throw TruvideoSdkVideoError.mergeFailed
         }
     }
-    
+
     func cancel(request: TruvideoSdkVideoRequest) throws {
         guard
             let retrievedRequest = try? store.getRequest(withId: request.id),
@@ -91,20 +90,20 @@ final class TruvideoSdkVideoMergeEngine: TruvideoSdkVideoRequestEngine {
         commandExecutor.cancelCommandExecution(sessionId: externalId)
         updateRequestRequest(id: request.id, withFields: .status(value: .cancelled), .processId(value: nil))
     }
-    
+
     // MARK: - Private methods
-    
+
     private func validateAuthentication() throws {
         if !credentialsManager.isUserAuthenticated() {
             throw TruvideoSdkVideoError.userNotAuthenticated
         }
     }
-    
+
     private func isRequestCancelled(request: TruvideoSdkVideoRequest) -> Bool {
         let retrievedRequest = try? store.getRequest(withId: request.id)
         return retrievedRequest?.status == .cancelled
     }
-    
+
     private func updateRequestRequest(id: UUID, withFields fields: UpdateRequestData.Field...) {
         do {
             try store.updateRequest(withId: id, data: .init(fields: .init(fields)))
@@ -117,12 +116,12 @@ final class TruvideoSdkVideoMergeEngine: TruvideoSdkVideoRequestEngine {
         guard let component else {
             return
         }
-        
+
         guard component >= minimumSupportedResolutionDimension else {
             throw TruvideoSdkVideoError.invalidResolution
         }
     }
-    
+
     private func validateRequestStatus(request: TruvideoSdkVideoRequest) throws {
         guard
             let fetchedRequest = try? store.getRequest(withId: request.id)

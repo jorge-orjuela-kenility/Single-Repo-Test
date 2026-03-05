@@ -11,10 +11,10 @@ import Foundation
     private let id: UUID
     private let videos: [TruvideoSdkVideoFile]
     private let output: TruvideoSdkVideoFileDescriptor
-    
+
     private let engine: TruvideoSdkVideoRequestEngine
     private let store: VideoStore
-    
+
     init(
         videos: [TruvideoSdkVideoFile],
         output: TruvideoSdkVideoFileDescriptor,
@@ -28,10 +28,10 @@ import Foundation
         self.engine = engine
         self.store = store
     }
-    
+
     @objc public func build() throws -> TruvideoSdkVideoRequest {
         guard videos.count > 1 else { throw TruvideoSdkVideoError.invalidInputFiles(reason: .notEnoughVideos) }
-        
+
         let request = TruvideoSdkVideoRequest(
             id: id,
             type: .concat,
@@ -39,19 +39,19 @@ import Foundation
             output: output,
             createdAt: .init(),
             updatedAt: .init(),
-            concatData: .init(videos: videos.map { $0.url }),
+            concatData: .init(videos: videos.map(\.url)),
             engine: engine
         )
         save(request: request)
         return request
     }
-    
+
     private func save(request: TruvideoSdkVideoRequest) {
         do {
             // File must exist in order to create the bookmark for the URL
             // therefore we create an empty file at outputURL so we can create the bookmark
             guard let firstVideo = videos.first,
-            let outputUrl = output.url(fileExtension: firstVideo.fileExtension) else { return }
+                  let outputUrl = output.url(fileExtension: firstVideo.fileExtension) else { return }
             TruvideoSdkVideoUtils.createEmptyFile(atURL: outputUrl)
             try store.insert(
                 request: LocalVideoRequest(

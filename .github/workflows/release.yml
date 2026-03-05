@@ -65,18 +65,12 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_16.0.app
           export DEVELOPER_DIR="$(xcode-select -p)"
           echo "DEVELOPER_DIR=$DEVELOPER_DIR"
-          xcodebuild -version
-
-          # Reset CoreSimulator (user-scoped service)
+          xcodebuild -version          
           xcrun simctl shutdown all || true
           killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
-
-          # First-launch installs components that require admin privileges
-          sudo -E xcodebuild -runFirstLaunch
-
-          # Download iOS platform/runtime WITHOUT sudo (talks to user CoreSimulator correctly)
+          
+          sudo -E xcodebuild -runFirstLaunch          
           xcodebuild -downloadPlatform iOS
-
           xcodebuild -showsdks
 
       - name: Cache SwiftPM state

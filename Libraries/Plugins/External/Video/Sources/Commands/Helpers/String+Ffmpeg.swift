@@ -10,9 +10,9 @@ import Foundation
 extension String {
     func ffmpegFormatted() -> String {
         if let absoluteString = removingPercentEncoding {
-            return "\"\(absoluteString)\""
+            "\"\(absoluteString)\""
         } else {
-            return "\"\(self)\""
+            "\"\(self)\""
         }
     }
 }

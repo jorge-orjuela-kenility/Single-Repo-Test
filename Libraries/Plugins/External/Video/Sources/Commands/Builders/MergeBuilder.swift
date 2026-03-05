@@ -10,7 +10,7 @@ import Foundation
 public struct TruvideoSdkVideoMergeMediaEntry {
     let fileIndex: Int
     let entryIndex: Int
-    
+
     public init(fileIndex: Int, entryIndex: Int) {
         self.fileIndex = fileIndex
         self.entryIndex = entryIndex
@@ -21,7 +21,7 @@ public struct TruvideoSdkVideoMergeVideoTrack {
     let tracks: [TruvideoSdkVideoMergeMediaEntry]
     let width: Int?
     let height: Int?
-    
+
     public init(tracks: [TruvideoSdkVideoMergeMediaEntry], width: Int? = nil, height: Int? = nil) {
         self.tracks = tracks
         self.width = width
@@ -31,7 +31,7 @@ public struct TruvideoSdkVideoMergeVideoTrack {
 
 public struct TruvideoSdkVideoMergeAudioTrack {
     let tracks: [TruvideoSdkVideoMergeMediaEntry]
-    
+
     public init(tracks: [TruvideoSdkVideoMergeMediaEntry]) {
         self.tracks = tracks
     }
@@ -45,16 +45,16 @@ extension TruvideoSdkVideoMergeAudioTrack: Equatable, Codable {}
     private let id: UUID
     private let videos: [TruvideoSdkVideoFile]
     private let output: TruvideoSdkVideoFileDescriptor
-    
+
     private let engine: TruvideoSdkVideoRequestEngine
     private let store: VideoStore
-    
+
     public var width: CGFloat?
     public var height: CGFloat?
     public var framesRate: TruvideoSdkVideoFrameRate = .thirtyFps
     public var videoTracks: [TruvideoSdkVideoMergeVideoTrack] = []
     public var audioTracks: [TruvideoSdkVideoMergeAudioTrack] = []
-    
+
     init(
         videos: [TruvideoSdkVideoFile],
         output: TruvideoSdkVideoFileDescriptor,
@@ -68,10 +68,10 @@ extension TruvideoSdkVideoMergeAudioTrack: Equatable, Codable {}
         self.engine = engine
         self.store = store
     }
-    
+
     @objc public func build() throws -> TruvideoSdkVideoRequest {
         guard videos.count > 1 else { throw TruvideoSdkVideoError.invalidInputFiles(reason: .notEnoughVideos) }
-        
+
         let request = TruvideoSdkVideoRequest(
             id: id,
             type: .merge,
@@ -80,7 +80,7 @@ extension TruvideoSdkVideoMergeAudioTrack: Equatable, Codable {}
             createdAt: .init(),
             updatedAt: .init(),
             mergeData: .init(
-                videos: videos.map { $0.url },
+                videos: videos.map(\.url),
                 width: width,
                 height: height,
                 framesRate: framesRate,
@@ -92,7 +92,7 @@ extension TruvideoSdkVideoMergeAudioTrack: Equatable, Codable {}
         save(request: request)
         return request
     }
-    
+
     private func save(request: TruvideoSdkVideoRequest) {
         do {
             // File must exist in order to create the bookmark for the URL

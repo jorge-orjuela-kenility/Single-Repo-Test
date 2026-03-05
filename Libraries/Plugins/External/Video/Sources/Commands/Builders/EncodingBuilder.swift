@@ -11,7 +11,7 @@ public struct TruvideoSdkVideoEncodeVideoEntry {
     let entryIndex: Int
     let width: Int?
     let height: Int?
-    
+
     public init(entryIndex: Int, width: Int? = nil, height: Int? = nil) {
         self.entryIndex = entryIndex
         self.width = width
@@ -22,20 +22,19 @@ public struct TruvideoSdkVideoEncodeVideoEntry {
 extension TruvideoSdkVideoEncodeVideoEntry: Equatable, Codable {}
 
 @objc public final class EncodingBuilder: NSObject {
-
     private let id: UUID
     private let video: TruvideoSdkVideoFile
     private let output: TruvideoSdkVideoFileDescriptor
-    
+
     private let engine: TruvideoSdkVideoRequestEngine
     private let store: VideoStore
-    
+
     public var width: CGFloat?
     public var height: CGFloat?
     public var framesRate: TruvideoSdkVideoFrameRate = .thirtyFps
     public var videoTracks: [TruvideoSdkVideoEncodeVideoEntry] = []
     public var audioTracks: [Int] = []
-    
+
     init(
         video: TruvideoSdkVideoFile,
         output: TruvideoSdkVideoFileDescriptor,
@@ -49,7 +48,7 @@ extension TruvideoSdkVideoEncodeVideoEntry: Equatable, Codable {}
         self.engine = engine
         self.store = store
     }
-    
+
     @objc public func build() -> TruvideoSdkVideoRequest {
         let request = TruvideoSdkVideoRequest(
             id: id,
@@ -71,7 +70,7 @@ extension TruvideoSdkVideoEncodeVideoEntry: Equatable, Codable {}
         save(request: request)
         return request
     }
-    
+
     private func save(request: TruvideoSdkVideoRequest) {
         do {
             // File must exist in order to create the bookmark for the URL

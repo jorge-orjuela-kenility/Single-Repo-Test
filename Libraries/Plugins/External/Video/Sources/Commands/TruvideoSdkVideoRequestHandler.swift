@@ -1,5 +1,5 @@
 //
-//  TruvideoSdkVideoRequest.swift
+//  TruvideoSdkVideoRequestHandler.swift
 //  TruvideoSdkVideo
 //
 //  Created by Luis Francisco Piura Mejia on 28/2/24.
@@ -21,6 +21,7 @@ final class TruvideoSdkVideoRequestHandler<R> {
             return result
         }
     }
+
     private var isProcessing = false
     private var previousResult: R?
     private var action: () async throws -> R

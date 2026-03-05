@@ -28,7 +28,6 @@ struct AudioItem {
 }
 
 final class FFMPEGMergeCommandGenerator {
-    
     func generateCommand(
         videosInfo: [TruvideoSdkVideoInformation],
         width: CGFloat? = nil,
@@ -40,25 +39,26 @@ final class FFMPEGMergeCommandGenerator {
     ) -> FFMPEGCommand {
         let newWidth: Int? = width.map { Int($0) }
         let newHeight: Int? = height.map { Int($0) }
-        
+
         let effectiveVideoTracks = convertVideoInput(
             videosInfo: videosInfo,
             data: videoTracks,
             width: newWidth,
-            height: newHeight)
+            height: newHeight
+        )
         let effectiveAudioTracks = convertAudioInput(
             videosInfo: videosInfo,
             data: audioTracks
         )
-        
+
         guard !effectiveVideoTracks.isEmpty || !effectiveAudioTracks.isEmpty else {
             return .init(script: "", inputFilesListFilePaths: [])
         }
-        
+
         var command = "-y " // Overwrite output file if it exists
-        
+
         // Add inputs and select the first video and audio stream from each file
-        let inputPaths = videosInfo.map { $0.path }
+        let inputPaths = videosInfo.map(\.path)
         for file in inputPaths {
             command += "-i \(file.ffmpegFormatted()) "
         }
@@ -71,46 +71,50 @@ final class FFMPEGMergeCommandGenerator {
             var videoCounter = 0
             var videoTrackDuration: Int64 = 0
             var videoTrackNames = [String]()
-            
+
             let effectiveWidth = videoTrack.width
             let effectiveHeight = videoTrack.height
-            
+
             for entry in videoTrack.tracks {
                 let track = entry.trackInfo
                 let videoInfo = entry.videoInfo
                 let fileIndex = inputPaths.firstIndex(of: entry.videoInfo.path) ?? -1
-                
-                if let track = track {
+
+                if let track {
                     let videoIndex = videoInfo.videoTracks.firstIndex { $0.index == track.index } ?? -1
                     let trackName = "[v_track\(videoTrackIndex)_video\(videoCounter)]"
                     videoTrackNames.append(trackName)
-                    
+
                     let scale = "'if(gt(iw/ih,\(effectiveWidth)/\(effectiveHeight)),\(effectiveWidth),-2)':'if(gt(iw/ih,\(effectiveWidth)/\(effectiveHeight)),-2,\(effectiveHeight))'"
                     let pad = "\(effectiveWidth):\(effectiveHeight):(ow-iw)/2:(oh-ih)/2"
                     filterParts.append("[\(fileIndex):v:\(videoIndex)]scale=\(scale),pad=\(pad),setsar=1\(trackName)")
                     videoCounter += 1
                     videoTrackDuration += track.durationMillis
-                    
+
                     // rest
                     let rest = videoInfo.durationMillis - track.durationMillis
                     if rest > 0 {
                         let restTrackName = "[v_track\(videoTrackIndex)_video\(videoCounter)]"
                         videoTrackNames.append(restTrackName)
-                        
-                        filterParts.append("color=c=black:s=\(effectiveWidth)x\(effectiveHeight):d=\(rest)ms\(restTrackName)")
+
+                        filterParts
+                            .append("color=c=black:s=\(effectiveWidth)x\(effectiveHeight):d=\(rest)ms\(restTrackName)")
                         videoCounter += 1
                         videoTrackDuration += rest
                     }
                 } else {
                     let trackName = "[v_track\(videoTrackIndex)_video\(videoCounter)]"
                     videoTrackNames.append(trackName)
-                    
-                    filterParts.append("color=c=black:s=\(effectiveWidth)x\(effectiveHeight):d=\(videoInfo.durationMillis)ms\(trackName)")
+
+                    filterParts
+                        .append(
+                            "color=c=black:s=\(effectiveWidth)x\(effectiveHeight):d=\(videoInfo.durationMillis)ms\(trackName)"
+                        )
                     videoCounter += 1
                     videoTrackDuration += videoInfo.durationMillis
                 }
             }
-            
+
             if !videoTrackNames.isEmpty {
                 let count = videoTrackNames.count
                 let name = "[v_track\(videoTrackIndex)]"
@@ -118,52 +122,61 @@ final class FFMPEGMergeCommandGenerator {
                 filterParts.append("\(videoTrackNames.joined())concat=n=\(count):v=1:a=0\(name)")
             }
         }
-        
+
         // Audio tracks
         var outAudios = [String]()
         for (audioTrackIndex, audioTrack) in effectiveAudioTracks.enumerated() {
             var audioCounter = 0
             var audioTrackDuration: Int64 = 0
             var audioTrackNames = [String]()
-            
+
             for entry in audioTrack.tracks {
                 let track = entry.trackInfo
                 let videoInfo = entry.videoInfo
                 let fileIndex = inputPaths.firstIndex(of: entry.videoInfo.path) ?? -1
-                
-                if let track = track {
+
+                if let track {
                     let audioIndex = videoInfo.audioTracks.firstIndex { $0.index == track.index } ?? -1
                     let trackName = "[a_track\(audioTrackIndex)_audio\(audioCounter)]"
                     audioTrackNames.append(trackName)
-                    
-                    filterParts.append("[\(fileIndex):a:\(audioIndex)]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo\(trackName)")
+
+                    filterParts
+                        .append(
+                            "[\(fileIndex):a:\(audioIndex)]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo\(trackName)"
+                        )
                     audioCounter += 1
                     audioTrackDuration += track.durationMillis
-                    
+
                     // rest
                     let rest = videoInfo.durationMillis - track.durationMillis
                     if rest > 0 {
                         let restTrackName = "[a_track\(audioTrackIndex)_audio\(audioCounter)]"
                         audioTrackNames.append(restTrackName)
-                        
+
                         let tempTrackName = "[a_track\(audioTrackIndex)_audio\(audioCounter)_rest]"
                         filterParts.append("aevalsrc=0:s=44100:d=\(rest)ms\(tempTrackName)")
-                        filterParts.append("\(tempTrackName)aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo\(restTrackName)")
+                        filterParts
+                            .append(
+                                "\(tempTrackName)aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo\(restTrackName)"
+                            )
                         audioCounter += 1
                         audioTrackDuration += rest
                     }
                 } else {
                     let trackName = "[a_track\(audioTrackIndex)_audio\(audioCounter)]"
                     audioTrackNames.append(trackName)
-                    
+
                     let tempTrackName = "[a_track\(audioTrackIndex)_audio\(audioCounter)_rest]"
                     filterParts.append("aevalsrc=0:s=44100:d=\(videoInfo.durationMillis)ms\(tempTrackName)")
-                    filterParts.append("\(tempTrackName)aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo\(trackName)")
+                    filterParts
+                        .append(
+                            "\(tempTrackName)aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo\(trackName)"
+                        )
                     audioCounter += 1
                     audioTrackDuration += videoInfo.durationMillis
                 }
             }
-            
+
             if !audioTrackNames.isEmpty {
                 let count = audioTrackNames.count
                 let name = "[a_track\(audioTrackIndex)]"
@@ -192,7 +205,7 @@ final class FFMPEGMergeCommandGenerator {
 
         return .init(script: command, inputFilesListFilePaths: [])
     }
-    
+
     private func calculateMaxSize(
         widths: [Int],
         heights: [Int],
@@ -201,19 +214,19 @@ final class FFMPEGMergeCommandGenerator {
     ) -> CGSize {
         let maxWidth: Int
         let maxHeight: Int
-        
-        if let streamMaxWidth = streamMaxWidth, let streamMaxHeight = streamMaxHeight {
+
+        if let streamMaxWidth, let streamMaxHeight {
             maxWidth = streamMaxWidth
             maxHeight = streamMaxHeight
         } else {
             guard let currentMaxWidth = widths.max(), let currentMaxHeight = heights.max() else {
                 return .zero
             }
-            
-            if let streamMaxWidth = streamMaxWidth {
+
+            if let streamMaxWidth {
                 maxWidth = streamMaxWidth
                 maxHeight = (streamMaxWidth * currentMaxHeight) / currentMaxWidth
-            } else if let streamMaxHeight = streamMaxHeight {
+            } else if let streamMaxHeight {
                 maxWidth = (streamMaxHeight * currentMaxWidth) / currentMaxHeight
                 maxHeight = streamMaxHeight
             } else {
@@ -221,10 +234,10 @@ final class FFMPEGMergeCommandGenerator {
                 maxHeight = currentMaxHeight
             }
         }
-        
+
         return CGSize(width: maxWidth, height: maxHeight)
     }
-    
+
     private func convertVideoInput(
         videosInfo: [TruvideoSdkVideoInformation],
         data: [TruvideoSdkVideoMergeVideoTrack],
@@ -232,12 +245,13 @@ final class FFMPEGMergeCommandGenerator {
         height: Int?
     ) -> [VideoTrack] {
         var result = [VideoTrack]()
-        
+
         if data.isEmpty {
-            let maxVideoCount = videosInfo.map { $0.videoTracks.count }.max() ?? 0
-            for videoTrackIndex in 0..<maxVideoCount {
+            let maxVideoCount = videosInfo.map(\.videoTracks.count).max() ?? 0
+            for videoTrackIndex in 0 ..< maxVideoCount {
                 let tracks = videosInfo.map {
-                    let trackInfo = $0.videoTracks.indices.contains(videoTrackIndex) ? $0.videoTracks[videoTrackIndex] : nil
+                    let trackInfo = $0.videoTracks.indices.contains(videoTrackIndex) ? $0
+                        .videoTracks[videoTrackIndex] : nil
                     return VideoItem(videoInfo: $0, trackInfo: trackInfo)
                 }
                 if !tracks.isEmpty {
@@ -253,10 +267,11 @@ final class FFMPEGMergeCommandGenerator {
         } else {
             for item in data {
                 let tracks: [VideoItem] = item.tracks.compactMap { track in
-                    guard let videoInfo = videosInfo.indices.contains(track.fileIndex) ? videosInfo[track.fileIndex] : nil else {
+                    guard let videoInfo = videosInfo.indices
+                        .contains(track.fileIndex) ? videosInfo[track.fileIndex] : nil else {
                         return nil
                     }
-                    
+
                     let trackInfo = videoInfo.videoTracks.first { $0.index == track.entryIndex }
                     return VideoItem(videoInfo: videoInfo, trackInfo: trackInfo)
                 }
@@ -274,7 +289,7 @@ final class FFMPEGMergeCommandGenerator {
         }
         return result
     }
-    
+
     private func convertAudioInput(
         videosInfo: [TruvideoSdkVideoInformation],
         data: [TruvideoSdkVideoMergeAudioTrack]
@@ -282,8 +297,8 @@ final class FFMPEGMergeCommandGenerator {
         var result = [AudioTrack]()
 
         if data.isEmpty {
-            let maxCount = videosInfo.map { $0.audioTracks.count }.max() ?? 0
-            for i in 0..<maxCount {
+            let maxCount = videosInfo.map(\.audioTracks.count).max() ?? 0
+            for i in 0 ..< maxCount {
                 let tracks: [AudioItem] = videosInfo.map { videoInfo in
                     let trackInfo = videoInfo.audioTracks.indices.contains(i) ? videoInfo.audioTracks[i] : nil
                     return AudioItem(videoInfo: videoInfo, trackInfo: trackInfo)
@@ -296,10 +311,11 @@ final class FFMPEGMergeCommandGenerator {
         } else {
             for item in data {
                 let tracks: [AudioItem] = item.tracks.compactMap { track in
-                    guard let videoInfo = videosInfo.indices.contains(track.fileIndex) ? videosInfo[track.fileIndex] : nil else {
+                    guard let videoInfo = videosInfo.indices
+                        .contains(track.fileIndex) ? videosInfo[track.fileIndex] : nil else {
                         return nil
                     }
-                    
+
                     let trackInfo = videoInfo.audioTracks.first { $0.index == track.entryIndex }
                     return AudioItem(videoInfo: videoInfo, trackInfo: trackInfo)
                 }

@@ -8,12 +8,11 @@
 import Foundation
 
 final class ConcatInputValidator {
-    
     private let commandExecutor: FFMPEGCommandExecutor
     private let credentialsManager: TruvideoCredentialsManager
     private let videosInformationGenerator: VideosInformationGenerator
     private let videosValidator: TruvideoSdkVideoFileValidator
-    
+
     init(
         credentialsManager: TruvideoCredentialsManager = TruvideoCredentialsManagerImp(),
         videosInformationGenerator: VideosInformationGenerator = .init(),
@@ -25,7 +24,7 @@ final class ConcatInputValidator {
         self.videosInformationGenerator = videosInformationGenerator
         self.videosValidator = videosValidator
     }
-    
+
     func canProcessConcatWith(videos: [URL]) async throws -> Bool {
         try validateAuthentication()
         try videosValidator.validateVideosExistence(videos: videos, minVideosCount: 2)
@@ -37,11 +36,11 @@ final class ConcatInputValidator {
             return false
         }
     }
-    
+
     func validateVideosForConcat(_ videos: [URL]) async throws {
         let videosInfo = try await videosInformationGenerator.generateAssetsMetadata(videos: videos)
         let firstVideoInfo = videosInfo[0]
-        
+
         for videoInfo in videosInfo {
             guard firstVideoInfo.format == videoInfo.format else {
                 throw TruvideoSdkVideoError.invalidInputFiles(reason: .differentFormats)
@@ -54,11 +53,10 @@ final class ConcatInputValidator {
             }
         }
     }
-    
+
     private func validateAuthentication() throws {
         if !credentialsManager.isUserAuthenticated() {
             throw TruvideoSdkVideoError.userNotAuthenticated
         }
     }
-
 }

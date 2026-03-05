@@ -8,7 +8,6 @@
 import Foundation
 
 extension Encodable {
-    
     var jsonRepresentation: String? {
         guard
             let data = try? JSONEncoder().encode(self)
@@ -17,5 +16,4 @@ extension Encodable {
         }
         return String(data: data, encoding: .utf8)
     }
-    
 }

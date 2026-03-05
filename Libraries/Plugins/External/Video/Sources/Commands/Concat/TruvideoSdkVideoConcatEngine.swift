@@ -8,7 +8,6 @@
 import Foundation
 
 final class TruvideoSdkVideoConcatEngine: TruvideoSdkVideoRequestEngine {
-    
     private let commandGenerator: FFMPEGCommandGenerator
     private let commandExecutor: FFMPEGCommandExecutor
     private let credentialsManager: TruvideoCredentialsManager
@@ -17,7 +16,7 @@ final class TruvideoSdkVideoConcatEngine: TruvideoSdkVideoRequestEngine {
     private let inputValidator: ConcatInputValidator
     private let videosInformationGenerator: VideosInformationGenerator
     private let videosValidator: TruvideoSdkVideoFileValidator
-    
+
     init(
         credentialsManager: TruvideoCredentialsManager = TruvideoCredentialsManagerImp(),
         commandGenerator: FFMPEGCommandGenerator = FFMPEGCommandGenerator(),
@@ -35,7 +34,7 @@ final class TruvideoSdkVideoConcatEngine: TruvideoSdkVideoRequestEngine {
         self.videosValidator = videosValidator
         self.store = store
     }
-    
+
     func process(request: TruvideoSdkVideoRequest) async throws -> TruvideoSdkVideoRequest.Result {
         try validateAuthentication()
         try validateRequestStatus(request: request)
@@ -52,7 +51,7 @@ final class TruvideoSdkVideoConcatEngine: TruvideoSdkVideoRequestEngine {
         try videosValidator.validateVideosExistence(videos: videos, minVideosCount: 2)
         let assetsMetadata = try await videosInformationGenerator.generateAssetsMetadata(videos: videos)
         try await inputValidator.validateVideosForConcat(concatData.videos)
-        
+
         let ffmpegCommand = commandGenerator.generateConcatCommandFor(
             videosInfo: assetsMetadata,
             inputPath: TruvideoSdkVideoUtils.outputURL(for: UUID().uuidString, fileExtension: "txt"),
@@ -75,7 +74,7 @@ final class TruvideoSdkVideoConcatEngine: TruvideoSdkVideoRequestEngine {
             throw TruvideoSdkVideoError.concatFailed
         }
     }
-    
+
     func cancel(request: TruvideoSdkVideoRequest) throws {
         guard
             let retrievedRequest = try? store.getRequest(withId: request.id),
@@ -90,14 +89,14 @@ final class TruvideoSdkVideoConcatEngine: TruvideoSdkVideoRequestEngine {
         commandExecutor.cancelCommandExecution(sessionId: externalId)
         updateRequestRequest(id: request.id, withFields: .status(value: .cancelled), .processId(value: nil))
     }
-    
+
     // MARK: - Private methods
-    
+
     private func isRequestCancelled(request: TruvideoSdkVideoRequest) -> Bool {
         let retrievedRequest = try? store.getRequest(withId: request.id)
         return retrievedRequest?.status == .cancelled
     }
-    
+
     private func updateRequestRequest(id: UUID, withFields fields: UpdateRequestData.Field...) {
         do {
             try store.updateRequest(withId: id, data: .init(fields: .init(fields)))
@@ -105,13 +104,13 @@ final class TruvideoSdkVideoConcatEngine: TruvideoSdkVideoRequestEngine {
             print("Request update failed with error \(error)")
         }
     }
-    
+
     private func validateAuthentication() throws {
         if !credentialsManager.isUserAuthenticated() {
             throw TruvideoSdkVideoError.userNotAuthenticated
         }
     }
-    
+
     private func validateRequestStatus(request: TruvideoSdkVideoRequest) throws {
         guard
             let fetchedRequest = try? store.getRequest(withId: request.id)

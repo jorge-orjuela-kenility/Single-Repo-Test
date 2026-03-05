@@ -4,7 +4,6 @@
 
 internal import DI
 import Foundation
-internal import InternalUtilities
 @_spi(Internal) import TruVideoRuntime
 
 /// C-callable entry point for ObjC +load to avoid importing the generated -Swift.h (fixes ScanDependencies).

@@ -1,5 +1,5 @@
 //
-//  TruvideoSdkVideoVideoEncoderImplementation.swift
+//  TruvideoSdkVideoVideoEncoderEngine.swift
 //  TruvideoSdkVideo
 //
 //  Created by Luis Francisco Piura Mejia on 16/2/24.
@@ -8,13 +8,12 @@
 import Foundation
 
 final class TruvideoSdkVideoVideoEncoderEngine: TruvideoSdkVideoRequestEngine {
-    
     private let credentialsManager: TruvideoCredentialsManager
     private let videoValidator: TruvideoSdkVideoFileValidator
     private let commandExecutor: FFMPEGCommandExecutor
     private let commandGenerator: FFMPEGMergeCommandGenerator
     private let store: VideoStore
-    
+
     init(
         credentialsManager: TruvideoCredentialsManager = TruvideoCredentialsManagerImp(),
         videoValidator: TruvideoSdkVideoFileValidator = .init(),
@@ -28,7 +27,7 @@ final class TruvideoSdkVideoVideoEncoderEngine: TruvideoSdkVideoRequestEngine {
         self.commandGenerator = commandGenerator
         self.store = store
     }
-    
+
     func process(request: TruvideoSdkVideoRequest) async throws -> TruvideoSdkVideoRequest.Result {
         try validateAuthentication()
         try validateRequestStatus(request: request)
@@ -49,18 +48,18 @@ final class TruvideoSdkVideoVideoEncoderEngine: TruvideoSdkVideoRequestEngine {
                 videosInfo: [videoInfo],
                 width: encodingData.width,
                 height: encodingData.height,
-                videoTracks: encodingData.videoTracks.map({ entry in
-                    return .init(
+                videoTracks: encodingData.videoTracks.map { entry in
+                    .init(
                         tracks: [.init(fileIndex: 0, entryIndex: entry.entryIndex)],
                         width: entry.width,
                         height: entry.height
                     )
-                }),
-                audioTracks: encodingData.audioTracks.map({ entry in
-                    return .init(
+                },
+                audioTracks: encodingData.audioTracks.map { entry in
+                    .init(
                         tracks: [.init(fileIndex: 0, entryIndex: entry)]
                     )
-                }),
+                },
                 framesRate: encodingData.framesRate,
                 outputPath: outputURL.path
             )
@@ -79,7 +78,7 @@ final class TruvideoSdkVideoVideoEncoderEngine: TruvideoSdkVideoRequestEngine {
             throw TruvideoSdkVideoError.encodingFailed
         }
     }
-    
+
     func cancel(request: TruvideoSdkVideoRequest) throws {
         guard
             let retrievedRequest = try? store.getRequest(withId: request.id),
@@ -94,9 +93,9 @@ final class TruvideoSdkVideoVideoEncoderEngine: TruvideoSdkVideoRequestEngine {
         commandExecutor.cancelCommandExecution(sessionId: externalId)
         updateRequestRequest(id: request.id, withFields: .status(value: .cancelled), .processId(value: nil))
     }
-    
+
     // MARK: - Private methods
-    
+
     private func isRequestCancelled(request: TruvideoSdkVideoRequest) -> Bool {
         let retrievedRequest = try? store.getRequest(withId: request.id)
         return retrievedRequest?.status == .cancelled
@@ -109,13 +108,13 @@ final class TruvideoSdkVideoVideoEncoderEngine: TruvideoSdkVideoRequestEngine {
             print("Request update failed with error \(error)")
         }
     }
-    
+
     private func validateAuthentication() throws {
         if !credentialsManager.isUserAuthenticated() {
             throw TruvideoSdkVideoError.userNotAuthenticated
         }
     }
-    
+
     private func validateRequestStatus(request: TruvideoSdkVideoRequest) throws {
         guard
             let fetchedRequest = try? store.getRequest(withId: request.id)

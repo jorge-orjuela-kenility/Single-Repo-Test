@@ -1,5 +1,5 @@
 //
-//  TruvideoSdkVideoRequestBuilderImplementation.swift
+//  TruvideoSdkVideoRequestBuilder.swift
 //  TruvideoSdkVideo
 //
 //  Created by Luis Francisco Piura Mejia on 26/2/24.
@@ -8,13 +8,12 @@
 import Combine
 
 final class TruvideoSdkVideoRequestBuilder {
-    
     private let store: VideoStore
     private let mergeEngine: TruvideoSdkVideoMergeEngine
     private let concatEngine: TruvideoSdkVideoConcatEngine
     private let encodingEngine: TruvideoSdkVideoRequestEngine
     private let credentialsManager: TruvideoCredentialsManager
-    
+
     init(
         store: VideoStore,
         mergeEngine: TruvideoSdkVideoMergeEngine,
@@ -28,91 +27,84 @@ final class TruvideoSdkVideoRequestBuilder {
         self.encodingEngine = encodingEngine
         self.credentialsManager = credentialsManager
     }
-    
+
     func getRequestsByStatus(status: TruvideoSdkVideoRequest.Status) throws -> [TruvideoSdkVideoRequest] {
         guard credentialsManager.isUserAuthenticated() else {
             throw TruvideoSdkVideoError.userNotAuthenticated
         }
-        let localRequestStatus: LocalVideoRequest.Status
-        switch status {
+        let localRequestStatus: LocalVideoRequest.Status = switch status {
         case .idle:
-            localRequestStatus = .idle
+            .idle
         case .error:
-            localRequestStatus = .error
+            .error
         case .complete:
-            localRequestStatus = .completed
+            .completed
         case .cancelled:
-            localRequestStatus = .cancelled
+            .cancelled
         case .processing:
-            localRequestStatus = .processing
+            .processing
         }
         let localRequests = try? store.getRequests(withStatus: localRequestStatus)
         return localRequests?.compactMap(map) ?? []
     }
-    
+
     func streamRequests(
         withStatus status: TruvideoSdkVideoRequest.Status?
     ) -> AnyPublisher<[TruvideoSdkVideoRequest], Never> {
-        
-        let requests: AnyPublisher<[LocalVideoRequest], Never>
-        
-        if let status {
-            requests = store.streamVideos(withStatus: status)
+        let requests: AnyPublisher<[LocalVideoRequest], Never> = if let status {
+            store.streamVideos(withStatus: status)
         } else {
-            requests = store.streamVideos()
+            store.streamVideos()
         }
-        
+
         return requests.map { $0.map(self.map) }
             .eraseToAnyPublisher()
     }
-    
+
     func streamVideoRequest(withId id: UUID) throws -> AnyPublisher<TruvideoSdkVideoRequest, Never> {
         try store.streamVideo(with: id)
             .map(map)
             .eraseToAnyPublisher()
     }
-    
+
     func deleteRequest(withId id: UUID) throws {
         try store.deleteRequest(withId: id)
     }
-    
+
     func deleteRequests() throws {
         try store.deleteRequests()
     }
-    
+
     // MARK: - Private methods
-    
+
     private func map(localRequest: LocalVideoRequest) -> TruvideoSdkVideoRequest {
-        let requestStatus: TruvideoSdkVideoRequest.Status
-        switch localRequest.status {
+        let requestStatus: TruvideoSdkVideoRequest.Status = switch localRequest.status {
         case .idle:
-            requestStatus = .idle
+            .idle
         case .error:
-            requestStatus = .error
+            .error
         case .completed:
-            requestStatus = .complete
+            .complete
         case .cancelled:
-            requestStatus = .cancelled
+            .cancelled
         case .processing:
-            requestStatus = .processing
+            .processing
         }
-        let requestType: TruvideoSdkVideoRequest.`Type`
-        switch localRequest.type {
+        let requestType: TruvideoSdkVideoRequest.`Type` = switch localRequest.type {
         case .concat:
-            requestType = .concat
+            .concat
         case .merge:
-            requestType = .merge
+            .merge
         case .encode:
-            requestType = .encode
+            .encode
         }
-        let engine: TruvideoSdkVideoRequestEngine
-        switch requestType {
+        let engine: TruvideoSdkVideoRequestEngine = switch requestType {
         case .merge:
-            engine = mergeEngine
+            mergeEngine
         case .encode:
-            engine = encodingEngine
+            encodingEngine
         case .concat:
-            engine = concatEngine
+            concatEngine
         }
         let additionalData = getAdditionalData(localRequest: localRequest)
         return .init(
@@ -130,7 +122,7 @@ final class TruvideoSdkVideoRequestBuilder {
             engine: engine
         )
     }
-    
+
     private func getAdditionalData(localRequest: LocalVideoRequest) -> (
         mergeData: TruvideoSdkVideoRequest.VideoMergeData?,
         concatData: TruvideoSdkVideoRequest.VideoConcatData?,
@@ -139,17 +131,16 @@ final class TruvideoSdkVideoRequestBuilder {
         var mergeData: TruvideoSdkVideoRequest.VideoMergeData?
         var concatData: TruvideoSdkVideoRequest.VideoConcatData?
         var encodingData: TruvideoSdkVideoRequest.VideoEncodingData?
-        
+
         switch localRequest.type {
         case .merge:
             let serializedMergeData: TruvideoSdkVideoRequest.VideoMergeData.SerializableMergeData? = decode(
                 json: localRequest.rawData
             )
             if let requestFrameRate = serializedMergeData?.framesRate,
-               let frameRate = TruvideoSdkVideoFrameRate(rawValue: requestFrameRate)
-            {
+               let frameRate = TruvideoSdkVideoFrameRate(rawValue: requestFrameRate) {
                 mergeData = .init(
-                    videos: localRequest.inputFiles.map { $0.path },
+                    videos: localRequest.inputFiles.map(\.path),
                     width: serializedMergeData?.width,
                     height: serializedMergeData?.height,
                     framesRate: frameRate,
@@ -158,7 +149,7 @@ final class TruvideoSdkVideoRequestBuilder {
                 )
             }
         case .concat:
-            concatData = .init(videos: localRequest.inputFiles.map { $0.path })
+            concatData = .init(videos: localRequest.inputFiles.map(\.path))
         case .encode:
             let serializedEncodingData: TruvideoSdkVideoRequest.VideoEncodingData.SerializableEncodingData? = decode(
                 json: localRequest.rawData
@@ -166,8 +157,7 @@ final class TruvideoSdkVideoRequestBuilder {
             if
                 let inputFile = localRequest.inputFiles.first?.path,
                 let requestFrameRate = serializedEncodingData?.framesRate,
-                let frameRate = TruvideoSdkVideoFrameRate(rawValue: requestFrameRate)
-            {
+                let frameRate = TruvideoSdkVideoFrameRate(rawValue: requestFrameRate) {
                 encodingData = .init(
                     inputFileURL: inputFile,
                     width: serializedEncodingData?.width,
@@ -178,11 +168,11 @@ final class TruvideoSdkVideoRequestBuilder {
                 )
             }
         }
-        
+
         return (mergeData, concatData, encodingData)
     }
-    
-    private func decode<T:Codable>(json: String?) -> T? {
+
+    private func decode<T: Codable>(json: String?) -> T? {
         guard let json else { return nil }
         return try? JSONDecoder().decode(T.self, from: Data(json.utf8))
     }
