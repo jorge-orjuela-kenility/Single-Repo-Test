@@ -29,6 +29,9 @@ public final class AuthenticatableClientMock: AuthenticatableClient {
     /// Records whether `signOut()` was called.
     public private(set) var signOutCalled = false
 
+    /// Records whether `refreshToken()` was called.
+    public private(set) var refreshTokenCalled = false
+
     // MARK: - AuthenticatableClient
 
     /// The currently stored authentication session, if any.
@@ -74,6 +77,17 @@ public final class AuthenticatableClientMock: AuthenticatableClient {
                 refreshToken: "mock-refresh-token"
             )
         )
+    }
+
+    /// Refreshes the current authentication token.
+    ///
+    /// - Throws: An error if refresh fails.
+    public func refreshToken() async throws(UtilityError) {
+        refreshTokenCalled = true
+
+        if let error {
+            throw error
+        }
     }
 
     /// Signs out the current authenticated session.

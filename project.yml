@@ -854,13 +854,12 @@ targets:
       - Libraries/Internal/Extended/TruVideoApi/Tests
     dependencies:
       - target: InternalUtilities
-      - target: NetworkingTesting
       - target: Networking
+      - target: NetworkingTesting
       - target: StorageKit
       - target: Utilities
       - target: TruVideoFoundation
       - target: DI
-      - target: TruVideoApi
       - target: TruVideoApiTesting
     settings:
       GENERATE_INFOPLIST_FILE: YES
@@ -1229,6 +1228,7 @@ targets:
       - package: SnapshotTesting
     settings:
       GENERATE_INFOPLIST_FILE: YES
+      ONLY_ACTIVE_ARCH: YES
 
   CameraObjectiveCExample:
     type: application
@@ -1323,6 +1323,103 @@ targets:
       - Libraries/Plugins/External/Media/Tests
     dependencies:
       - target: TruvideoSdkMedia
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+
+  TruvideoSdkVideo:
+    type: framework
+    platform: iOS
+    sources:
+      - path: Libraries/Plugins/External/Video/Sources
+      - path: Libraries/Plugins/External/Video/Krisp
+        buildPhase: none
+      - path: Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk/model_32.kw
+        buildPhase: resources
+      - path: Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk/VAD_model.kw
+        buildPhase: resources
+      - path: Libraries/Plugins/External/Video/Sources/TruvideoSdkVideo.h
+        buildPhase: headers
+        headerVisibility: public
+      - path: Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk/krisp-audio-sdk.hpp
+        buildPhase: headers
+        headerVisibility: public
+    dependencies:
+      - target: TruVideoRuntime
+      - target: TruvideoSdk
+      - target: Utilities
+      - target: TruVideoFoundation
+      - package: TruvideoSdkVideoUtils
+        product: TruvideoSdkVideoUtils
+    info:
+      path: Libraries/Plugins/External/Video/Sources/Info.plist
+    settings:
+      BUILD_LIBRARY_FOR_DISTRIBUTION: YES
+      DEFINES_MODULE: YES
+      LD_RUNPATH_SEARCH_PATHS: $(inherited) @loader_path/Frameworks @executable_path/Frameworks
+      PRODUCT_BUNDLE_IDENTIFIER: com.truvideo.sdk.video
+      PRODUCT_MODULE_NAME: TruvideoSdkVideo
+      CLANG_CXX_LANGUAGE_STANDARD: gnu++20
+      CLANG_CXX_LIBRARY: libc++
+      GCC_ENABLE_CPP_EXCEPTIONS: YES
+      GCC_ENABLE_CPP_RTTI: YES
+      CLANG_ENABLE_OBJC_ARC: YES
+      ENABLE_USER_SCRIPT_SANDBOXING: NO
+      HEADER_SEARCH_PATHS:
+        - $(SRCROOT)/Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk
+      LIBRARY_SEARCH_PATHS:
+        - $(inherited)
+        - $(SRCROOT)/Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk
+        - $(SRCROOT)/Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk/Debug/iphoneos
+        - $(SRCROOT)/Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk/Debug/simulator
+        - $(SRCROOT)/Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk/Release/iphoneos
+        - $(SRCROOT)/Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk/Release/simulator
+      OTHER_LDFLAGS:
+        - $(inherited)
+        - -ObjC
+        - -force_load
+        - $(SRCROOT)/Libraries/Plugins/External/Video/Krisp/krisp-audio-sdk/libkrisp-audio-sdk.a
+        - -framework
+        - Accelerate
+    preBuildScripts:
+      - name: Krisp Prebuild
+        script: |
+          bash "${SRCROOT}/scripts/krisp_prebuild.sh"
+        basedOnDependencyAnalysis: false
+    postCompileScripts:
+      - script: |
+          if [ "$CONFIGURATION" != "Debug" ]; then
+            echo "Skipping SwiftFormat for $CONFIGURATION build"
+            exit 0
+          fi
+
+          export PATH="/opt/homebrew/bin:$PATH"
+          if which swiftformat >/dev/null; then
+            swiftformat Libraries --exclude derivedData,.git,.build || echo "SwiftFormat failed, ignoring in this build"
+          else
+            echo "warning: SwiftFormat not installed, download from https://github.com/nicklockwood/SwiftFormat"
+          fi
+        name: SwiftFormat
+        basedOnDependencyAnalysis: false
+      - script: |
+          if [ -f /opt/homebrew/bin/swiftlint ]; then
+            /opt/homebrew/bin/swiftlint
+          elif [ -f /usr/local/bin/swiftlint ]; then
+            /usr/local/bin/swiftlint
+          elif which swiftlint > /dev/null; then
+            swiftlint
+          else
+            echo "warning: SwiftLint not installed, download from https://github.com/realm/SwiftLint"
+          fi
+        name: SwiftLint
+        basedOnDependencyAnalysis: false
+
+  TruvideoSdkVideoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Libraries/Plugins/External/Video/Tests
+    dependencies:
+      - target: TruvideoSdkVideo
     settings:
       GENERATE_INFOPLIST_FILE: YES
 
@@ -1479,12 +1576,14 @@ schemes:
           TruvideoSdkCameraUITests,
           TruvideoSdkCameraSnapshotTests,
         ]
+
   TruvideoSdkCameraSnapshotTests:
     build:
       targets:
         TruvideoSdkCameraSnapshotTests: all
     test:
       targets: [TruvideoSdkCameraSnapshotTests]
+
   CameraSwiftUIExample:
     build:
       targets:
@@ -1492,6 +1591,7 @@ schemes:
     run:
       config: Debug
       executable: CameraSwiftUIExample
+
   CameraObjectiveCExample:
     build:
       targets:
@@ -1499,3 +1599,19 @@ schemes:
     run:
       config: Debug
       executable: CameraObjectiveCExample
+
+  TruvideoSdkMedia:
+    build:
+      targets:
+        TruvideoSdkMedia: all
+    test:
+      targets:
+        [TruvideoSdkMediaTests]
+  
+  TruvideoSdkVideo:
+    build:
+      targets:
+        TruvideoSdkVideo: all
+    test:
+      targets:
+        [TruvideoSdkVideoTests]

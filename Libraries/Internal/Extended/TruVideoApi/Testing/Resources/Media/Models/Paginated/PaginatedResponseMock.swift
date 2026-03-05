@@ -39,6 +39,9 @@ public extension PaginatedResponse where Content: Decodable {
 
         return PaginatedResponse(
             content: content,
+            empty: content.isEmpty,
+            first: number == 0,
+            last: resolvedTotalPages <= 1 || number >= (resolvedTotalPages - 1),
             number: number,
             numberOfElements: resolvedNumberOfElements,
             size: size,

@@ -16,7 +16,12 @@ struct ResultExtensionTests {
         let sut = Result<Void, NetworkingError>.failure(NetworkingError(kind: .explicitlyCancelled))
 
         // When, Then
-        #expect(sut.failure?.kind == .explicitlyCancelled)
+        #expect({
+            if case let .failure(error) = sut {
+                return error.kind == .explicitlyCancelled
+            }
+            return false
+        }())
     }
 
     @Test
@@ -25,6 +30,11 @@ struct ResultExtensionTests {
         let sut = Result<String, NetworkingError>.success("")
 
         // When, Then
-        #expect(sut.failure == nil)
+        #expect({
+            if case .success = sut {
+                return true
+            }
+            return false
+        }())
     }
 }

@@ -5,7 +5,7 @@
 import DI
 import Foundation
 import Testing
-import Utilities
+import TruVideoFoundation
 
 @testable import Telemetry
 
@@ -56,31 +56,29 @@ struct EventDiskBufferTests {
 
     @Test
     func testThatRehydrateRestoresPersistedEvents() async throws {
-        try await withDependencyValues { dependencies in
-            // Given
-            let fileWriter = SystemFileWriter()
-            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            let event = TelemetryReport.Event(
-                name: "rehydrate_event",
-                severity: .warning,
-                source: "rehydrate_source"
-            )
+        // Given
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let event = TelemetryReport.Event(
+            name: "rehydrate_event",
+            severity: .warning,
+            source: "rehydrate_source"
+        )
 
-            // When
-            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            dependencies.fileWriter = fileWriter
+        // When
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let storageFile = tempDir.appendingPathComponent("events.json")
+        let encoder = JSONEncoder()
+        var encoded = try encoder.encode(event)
+        encoded.append(UInt8(ascii: "\n"))
+        try encoded.write(to: storageFile)
 
-            let buffer = EventDiskBuffer(storageURL: tempDir)
-            buffer.add(event)
+        let restoredBuffer = EventDiskBuffer(storageURL: tempDir)
+        let events = restoredBuffer.snapshot()
 
-            let restoredBuffer = EventDiskBuffer(storageURL: tempDir)
-            let events = restoredBuffer.snapshot()
-
-            // Then
-            #expect(events.count == 1, "Expected one event after rehydration")
-            #expect(events.first?.name == event.name, "Expected event name to match after rehydration")
-            #expect(events.first?.severity == event.severity, "Expected severity to match")
-            #expect(events.first?.source == event.source, "Expected source to match")
-        }
+        // Then
+        #expect(events.count == 1, "Expected one event after rehydration")
+        #expect(events.first?.name == event.name, "Expected event name to match after rehydration")
+        #expect(events.first?.severity == event.severity, "Expected severity to match")
+        #expect(events.first?.source == event.source, "Expected source to match")
     }
 }

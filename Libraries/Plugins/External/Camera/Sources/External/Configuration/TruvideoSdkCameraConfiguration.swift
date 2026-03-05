@@ -106,15 +106,6 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     /// should be writable and accessible by the application.
     public let outputPath: String
 
-    /// Indicates whether media should be uploaded in a streaming fashion during capture.
-    ///
-    /// This property determines whether captured media is uploaded to a remote
-    /// server as it is being recorded (streaming upload) or after capture is
-    /// complete (batch upload). When enabled, media data is transmitted
-    /// progressively during capture, which can reduce local storage requirements
-    /// but may impact network usage and upload reliability.
-    public let streamingUpload: Bool
-
     // MARK: - Initializer
 
     /// Creates a new camera configuration with essential settings.
@@ -157,8 +148,6 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     /// - **Lens Facing**: Specifies which camera (front or back) to use
     /// - **Media Mode**: Defines what can be captured and any limits
     /// - **Output Path**: Sets where captured media will be saved
-    /// - **Streaming Upload**: Determines whether media is uploaded during capture
-    ///
     /// - Parameters:
     ///   - backResolution: The default capture resolution for the back-facing camera.
     ///   - backResolutions: The list of available resolution presets for the back-facing camera.
@@ -170,7 +159,6 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     ///   - mode: The media capture mode and limits (default: `.videoAndPicture()`)
     ///   - orientation: The interface orientation for the camera experience.
     ///   - outputPath: The directory path for saved media (default: `""`)
-    ///   - streamingUpload: Whether to upload media during capture (default: `false`)
     public init(
         backResolution: TruvideoSdkCameraResolution = .hd1280x720,
         backResolutions: [TruvideoSdkCameraResolution] = TruvideoSdkCameraResolution.allCases,
@@ -181,8 +169,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
         lensFacing: TruvideoSdkCameraLensFacing = .back,
         mode: TruvideoSdkCameraMediaMode = .videoAndPicture(),
         orientation: TruvideoSdkCameraOrientation? = nil,
-        outputPath: String = "",
-        streamingUpload: Bool = false
+        outputPath: String = ""
     ) {
         self.backResolution = backResolution
         self.backResolutions = backResolutions
@@ -194,7 +181,6 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
         self.mode = mode
         self.orientation = orientation
         self.outputPath = outputPath
-        self.streamingUpload = streamingUpload
     }
 
     /// Objective-C compatible convenience initializer (no orientation).
@@ -215,7 +201,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     ///
     /// Selector (Obj-C):
     /// `-initWithBackResolutions:backResolution:flashMode:frontResolution:frontResolutions:`
-    /// `imageFormat:lensFacing:mode:outputPath:streamingUpload:`
+    /// `imageFormat:lensFacing:mode:outputPath:`
     ///
     /// Notes:
     /// - Parameters use Obj-C visible types. Internally, this initializer forwards `orientation = nil`.
@@ -234,8 +220,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     ///     imageFormat: .jpeg,
     ///     lensFacing: .back,
     ///     mode: .videoAndPicture(),
-    ///     outputPath: "",
-    ///     streamingUpload: false
+    ///     outputPath: ""
     /// )
     /// ```
     ///
@@ -251,8 +236,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     ///                    lensFacing:TruvideoSdkCameraLensFacingBack
     ///                           mode:
     ///     [TruvideoSdkCameraMediaMode NSVideoAndPictureWithMediaCount:nil videoDuration:nil]
-    ///                      outputPath:@""
-    ///                 streamingUpload:NO];
+    ///                      outputPath:@""];
     /// ```
     ///
     /// - Parameters:
@@ -265,7 +249,6 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     ///   - lensFacing: Camera lens to use for capture.
     ///   - mode: Media capture mode and limits.
     ///   - outputPath: Directory path for saved media.
-    ///   - streamingUpload: Whether to upload media during capture.
     public convenience init(
         backResolutions: [TruvideoSdkCameraResolution],
         backResolution: TruvideoSdkCameraResolution,
@@ -275,8 +258,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
         imageFormat: TruvideoSdkCameraImageFormat,
         lensFacing: TruvideoSdkCameraLensFacing,
         mode: TruvideoSdkCameraMediaMode,
-        outputPath: String,
-        streamingUpload: Bool
+        outputPath: String
     ) {
         self.init(
             backResolution: backResolution,
@@ -288,8 +270,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
             lensFacing: lensFacing,
             mode: mode,
             orientation: nil,
-            outputPath: outputPath,
-            streamingUpload: streamingUpload
+            outputPath: outputPath
         )
     }
 
@@ -310,7 +291,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     /// - You want deterministic UI orientation regardless of device rotation.
     ///
     /// `-initWithBackResolutions:backResolution:flashMode:frontResolution:frontResolutions:`
-    /// `imageFormat:lensFacing:mode:orientation:outputPath:streamingUpload:`
+    /// `imageFormat:lensFacing:mode:orientation:outputPath:`
     ///
     /// ## Usage
     ///
@@ -326,8 +307,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     ///     lensFacing: .back,
     ///     mode: .videoAndPicture(),
     ///     orientation: .landscapeLeft,
-    ///     outputPath: "",
-    ///     streamingUpload: false
+    ///     outputPath: ""
     /// )
     /// ```
     ///
@@ -344,8 +324,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     ///                           mode:
     ///     [TruvideoSdkCameraMediaMode NSVideoAndPictureWithMediaCount:nil videoDuration:nil]
     ///                   orientation:TruvideoSdkCameraOrientationLandscapeLeft
-    ///                      outputPath:@""
-    ///                 streamingUpload:NO];
+    ///                      outputPath:@""];
     /// ```
     ///
     /// - Parameters:
@@ -359,7 +338,6 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
     ///   - mode: Media capture mode and limits.
     ///   - orientation: Preferred camera interface orientation.
     ///   - outputPath: Directory path for saved media.
-    ///   - streamingUpload: Whether to upload media during capture.
     public convenience init(
         backResolutions: [TruvideoSdkCameraResolution],
         backResolution: TruvideoSdkCameraResolution,
@@ -370,8 +348,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
         lensFacing: TruvideoSdkCameraLensFacing,
         mode: TruvideoSdkCameraMediaMode,
         orientation: TruvideoSdkCameraOrientation,
-        outputPath: String,
-        streamingUpload: Bool
+        outputPath: String
     ) {
         self.init(
             backResolution: backResolution,
@@ -383,8 +360,7 @@ public final class TruvideoSdkCameraConfiguration: NSObject, Sendable {
             lensFacing: lensFacing,
             mode: mode,
             orientation: orientation,
-            outputPath: outputPath,
-            streamingUpload: streamingUpload
+            outputPath: outputPath
         )
     }
 }

@@ -19,11 +19,11 @@ struct MediaTests {
         {
           "id": "E9C8A3B6-9A3F-4D9B-8E42-3A6D9E1A9F01",
           "active": true,
-          "createdDate": "2025-01-10T15:30:45.123Z",
+          "createdDate": "2025-01-10T15:30:45Z",
           "duration": 120,
           "includeInReport": true,
           "isLibrary": false,
-          "metadata": "{\\"key\\":\\"value\\"}",
+          "metadata": { "key": "value" },
           "previewUrl": "https://example.com/preview.mp4",
           "sanitizedTitle": "foo-bar",
           "tags": { "env": "test" },
@@ -45,6 +45,7 @@ struct MediaTests {
         #expect(media.title == "Foo Bar")
         #expect(media.duration == 120)
         #expect(media.transcriptionLength == 12.5)
+        #expect(media.metadata["key"] == "value")
     }
 
     @Test
@@ -54,7 +55,7 @@ struct MediaTests {
         {
           "id": "E9C8A3B6-9A3F-4D9B-8E42-3A6D9E1A9F01",
           "active": true,
-          "createdDate": "2025-01-10T15:30:45.123Z",
+          "createdDate": "2025-01-10T15:30:45Z",
           "includeInReport": false,
           "isLibrary": false,
           "sanitizedTitle": "test",
@@ -80,7 +81,7 @@ struct MediaTests {
         {
           "id": "E9C8A3B6-9A3F-4D9B-8E42-3A6D9E1A9F01",
           "active": true,
-          "createdDate": "2025-01-10T15:30:45.123Z",
+          "createdDate": "2025-01-10T15:30:45Z",
           "includeInReport": false,
           "isLibrary": false,
           "sanitizedTitle": "test",
@@ -105,7 +106,7 @@ struct MediaTests {
         {
           "id": "E9C8A3B6-9A3F-4D9B-8E42-3A6D9E1A9F01",
           "active": true,
-          "createdDate": "2025-01-10T15:30:45.123Z",
+          "createdDate": "2025-01-10T15:30:45Z",
           "includeInReport": false,
           "isLibrary": false,
           "sanitizedTitle": "test",
@@ -124,13 +125,40 @@ struct MediaTests {
     }
 
     @Test
+    func testThatMediaShouldDecodeMetadataWhenMetadataIsJSONObject() throws {
+        // Given
+        let json = """
+        {
+          "id": "E9C8A3B6-9A3F-4D9B-8E42-3A6D9E1A9F01",
+          "active": true,
+          "createdDate": "2025-01-10T15:30:45Z",
+          "includeInReport": false,
+          "isLibrary": false,
+          "metadata": { "key": "value", "count": 2 },
+          "sanitizedTitle": "test",
+          "tags": {},
+          "title": "Test",
+          "type": "AUDIO",
+          "url": "https://example.com/media.mp3"
+        }
+        """
+
+        // When
+        let media = try JSONDecoder().decode(Media.self, from: Data(json.utf8))
+
+        // Then
+        #expect(media.metadata["key"] == "value")
+        #expect(media.metadata["count"] == 2)
+    }
+
+    @Test
     func testThatMediaShouldDecodeWithEmptyTagsWhenTagsAreMissing() throws {
         // Given
         let json = """
         {
           "id": "E9C8A3B6-9A3F-4D9B-8E42-3A6D9E1A9F01",
           "active": true,
-          "createdDate": "2025-01-10T15:30:45.123Z",
+          "createdDate": "2025-01-10T15:30:45Z",
           "includeInReport": false,
           "isLibrary": false,
           "sanitizedTitle": "test",

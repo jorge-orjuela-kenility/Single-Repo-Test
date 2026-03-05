@@ -16,7 +16,7 @@ func truVideoMediaLibraryRegistry() {
 private struct MediaLibrary: Library {
     /// The unique name of the library.
     var name: String {
-        "TruvideoSdkMedia"
+        "TruVideoSdkMedia"
     }
 
     /// The current semantic version of the library.

@@ -16,9 +16,7 @@ public final class TruvideoSdkMediaMetadata {
 
     /// A  dictionary representing the metadata as key-value pairs of type `[String: Any]`.
     public var dictionary: [String: Any] {
-        metadata.reduce(into: [:]) { result, entry in
-            result[entry.key] = entry.value.rawValue
-        }
+        metadata.dictionary
     }
 
     // MARK: - Public Methods
@@ -48,22 +46,44 @@ public final class TruvideoSdkMediaMetadata {
 
     private static func buildMetadata(from dictionary: [String: Any]) -> Metadata {
         dictionary.reduce(into: Metadata()) { result, entry in
-            switch entry.value {
-            case let array as [String]:
-                result[entry.key] = .array(array.map(MetadataValue.string))
+            guard let value = buildMetadataValue(from: entry.value) else { return }
+            result[entry.key] = value
+        }
+    }
 
-            case let dictionary as [String: Any]:
-                result[entry.key] = .dictionary(buildMetadata(from: dictionary))
+    private static func buildMetadataValue(from value: Any) -> MetadataValue? {
+        switch value {
+        case let array as [String]:
+            return .array(array.map(MetadataValue.string))
 
-            case let metadataValue as MetadataValue:
-                result[entry.key] = metadataValue
+        case let array as [Any]:
+            let metadataValues = array.compactMap { buildMetadataValue(from: $0) }
+            guard metadataValues.count == array.count else { return nil }
+            return .array(metadataValues)
 
-            case let string as String:
-                result[entry.key] = .string(string)
+        case let array as [MetadataValue]:
+            return .array(array)
 
-            default:
-                break
-            }
+        case let bool as Bool:
+            return .bool(bool)
+
+        case let dictionary as [String: MetadataValue]:
+            return .dictionary(dictionary)
+
+        case let dictionary as [String: Any]:
+            return .dictionary(buildMetadata(from: dictionary))
+
+        case let double as Double:
+            return .double(double)
+
+        case let int as Int:
+            return .int(int)
+
+        case let string as String:
+            return .string(string)
+
+        default:
+            return nil
         }
     }
 }

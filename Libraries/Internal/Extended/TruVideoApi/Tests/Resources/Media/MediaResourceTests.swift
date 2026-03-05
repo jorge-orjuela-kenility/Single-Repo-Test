@@ -100,12 +100,12 @@ struct MediaResourceTests {
             // When
             dependencies.session = session
             session.dataRequest = dataRequest
-            dataRequest.mockResponse = Response<PaginatedResponse<Media>, NetworkingError>(
+            dataRequest.mockResponse = Response<Media, NetworkingError>(
                 data: Data(),
                 metrics: nil,
                 request: nil,
                 response: nil,
-                result: .success(.mock(content: [media])),
+                result: .success(media),
                 type: .networkLoad
             )
             let result = try await sut.find(for: media.id)

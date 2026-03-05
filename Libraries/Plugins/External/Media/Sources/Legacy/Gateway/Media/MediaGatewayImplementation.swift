@@ -60,11 +60,11 @@ final class MediaGatewayImplementation: MediaGateway {
     /// - Returns: A `MediaDTO` object if the media item is found, otherwise `nil`.
     /// - Throws: An error if something goes wrong during the fetch operation.
     func getById(_ id: String) async throws -> MediaDTO? {
-        let parameters = TruVideoApi.SearchMediaParameters().ids([id])
-
-        guard let media = try await mediaResource.search(with: parameters).content.first else {
+        guard let id = UUID(uuidString: id) else {
             return nil
         }
+
+        let media = try await mediaResource.find(for: id)
 
         return makeMediaDTO(from: media)
     }

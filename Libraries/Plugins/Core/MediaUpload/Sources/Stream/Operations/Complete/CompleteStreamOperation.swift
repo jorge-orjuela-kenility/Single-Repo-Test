@@ -118,12 +118,20 @@ final class CompleteStreamOperation: AsyncOperation, @unchecked Sendable {
                     throw CompleteStreamError.missingSessionId
                 }
 
+                let tags = stream.tags.map { key, value in
+                    ["tag": key, "value": value]
+                }
+
                 let parameters: Parameters = [
-                    "includeInReport": stream.isIncludedInReport,
-                    "isLibrary": stream.isLibrary,
-                    "metadata": stream.metadata,
-                    "title": stream.title,
-                    "tags": stream.tags
+                    "media": [
+                        "insights": [
+                            "includeInReport": stream.isIncludedInReport,
+                            "isLibrary": stream.isLibrary
+                        ],
+                        "tags": tags,
+                        "title": stream.title
+                    ],
+                    "metadata": stream.metadata.dictionary
                 ]
 
                 let request = session.request(

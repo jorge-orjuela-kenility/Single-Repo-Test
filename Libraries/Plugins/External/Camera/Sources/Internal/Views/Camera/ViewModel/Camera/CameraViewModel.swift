@@ -8,7 +8,7 @@ internal import DI
 import Foundation
 internal import Telemetry
 internal import TruVideoMediaUpload
-import TruvideoSdk
+@_spi(Internal) import TruvideoSdk
 import UIKit
 internal import Utilities
 
@@ -17,6 +17,7 @@ final class CameraViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private let container: StreamContainer
+    private let isStreamingUploadEnabled: Bool
     let monitor: CameraMonitor
     private let onComplete: (TruvideoSdkCameraResult) -> Void
 
@@ -403,6 +404,7 @@ final class CameraViewModel: ObservableObject {
         self.container = container
         self.deviceOrientation = deviceOrientation
         self.isAuthenticated = truVideoSdk.isAuthenticated
+        self.isStreamingUploadEnabled = truVideoSdk.deviceSetting.isStreamingUploadEnabled
         self.monitor = monitor
         self.onComplete = onComplete
         self.videoDevice = videoDevice
@@ -560,7 +562,7 @@ final class CameraViewModel: ObservableObject {
     ///   - url: The file URL of the captured media (photo or video) to upload.
     ///   - file: The file type (`.jpg`, `.png`, `.mp4`, etc.) of the media being uploaded.
     func startStreamIfNeeded(from url: URL, of file: FileType) {
-        if configuration.streamingUpload {
+        if isStreamingUploadEnabled {
             Task { @MainActor in
                 do {
                     let stream = try await container.newStream(from: url, of: file)

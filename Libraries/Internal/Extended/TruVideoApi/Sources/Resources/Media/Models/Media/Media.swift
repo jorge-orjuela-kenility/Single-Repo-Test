@@ -151,6 +151,7 @@ public struct Media: Codable, Identifiable, Sendable {
         self.duration = try container.decodeIfPresent(Int.self, forKey: .duration)
         self.includeInReport = try container.decode(Bool.self, forKey: .includeInReport)
         self.isLibrary = try container.decode(Bool.self, forKey: .isLibrary)
+        self.metadata = try container.decodeIfPresent(Metadata.self, forKey: .metadata) ?? [:]
         self.previewUrl = try container.decodeIfPresent(URL.self, forKey: .previewUrl)
         self.sanitizedTitle = try container.decode(String.self, forKey: .sanitizedTitle)
         self.tags = try container.decodeIfPresent([String: String].self, forKey: .tags) ?? [:]
@@ -168,18 +169,6 @@ public struct Media: Codable, Identifiable, Sendable {
                     debugDescription: "Invalid ISO8601 date: \(createdDateString)"
                 )
             )
-
-        if
-            /// The raw string metadata.
-            let stringMetadata = try container.decodeIfPresent(String.self, forKey: .metadata),
-
-            /// The data representing the content of `stringMetadata`.
-            let data = stringMetadata.data(using: .utf8) {
-            let decoder = JSONDecoder()
-            self.metadata = (try? decoder.decode(Metadata.self, from: data)) ?? [:]
-        } else {
-            self.metadata = [:]
-        }
 
         if
             // Raw transcription length as a String provided by the backend.

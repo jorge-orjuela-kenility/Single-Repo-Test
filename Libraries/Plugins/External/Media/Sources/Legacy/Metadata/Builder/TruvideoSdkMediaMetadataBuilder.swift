@@ -20,9 +20,7 @@ public final class TruvideoSdkMediaMetadataBuilder {
     ///
     /// This is useful for external access to the metadata in a more generic format.
     public var dictionary: [String: Any] {
-        metadata.reduce(into: [:]) { result, key in
-            result[key.key] = key.value.rawValue
-        }
+        metadata.dictionary
     }
 
     // MARK: - Subscript

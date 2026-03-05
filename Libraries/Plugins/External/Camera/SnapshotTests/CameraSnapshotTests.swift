@@ -55,7 +55,7 @@ struct CameraSnapshotTests: SnapshotTestable {
     }
 
     @Test
-    func testThatCameraViewShowsLaunchInLandscapeRightOrientation() {
+    func testThatCameraViewLaunchInLandscapeRightOrientation() {
         // Given
         let configuration = TruvideoSdkCameraConfiguration(orientation: .landscapeRight)
         let truvideoSDKMock = TruvideoSDKMock()
@@ -134,10 +134,10 @@ struct CameraSnapshotTests: SnapshotTestable {
     // MARK: - Remaining timer tests
 
     @Test
-    func testThatCameraViewDisplayDescendingTimerWithSingleVideoOrPicture() async throws {
+    func testThatCameraViewDisplayDescendingTimerWithSingleVideoOrPictureMode() async throws {
         // Given
         let configuration = TruvideoSdkCameraConfiguration(
-            mode: .singleVideo(videoDuration: 20),
+            mode: .singleVideoOrPicture(videoDuration: 20),
             orientation: .landscapeRight
         )
 
@@ -162,7 +162,7 @@ struct CameraSnapshotTests: SnapshotTestable {
     }
 
     @Test
-    func testThatCameraViewDisplayDescendingTimerWithVideoAndPicture() async throws {
+    func testThatCameraViewDisplayDescendingTimerWithVideoAndPictureMode() async throws {
         // Given
         let configuration = TruvideoSdkCameraConfiguration(
             mode: .videoAndPicture(videoDuration: 20),
@@ -187,6 +187,34 @@ struct CameraSnapshotTests: SnapshotTestable {
 
         // Then
         assertSnapshotForAllDevices(sut, orientation: .portrait)
+    }
+
+    @Test
+    func testThatCameraViewDisplayDescendingTimerWithSingleVideoMode() async throws {
+        // Given
+        let configuration = TruvideoSdkCameraConfiguration(
+            mode: TruvideoSdkCameraMediaMode.singleVideo(videoDuration: 20),
+            orientation: .landscapeRight
+        )
+
+        let truvideoSDKMock = TruvideoSDKMock()
+        let viewModel = CameraViewModel(
+            configuration: configuration,
+            truVideoSdk: truvideoSDKMock,
+            onComplete: { _ in
+            },
+            state: .init(
+                remainingTime: 19.toHMS(),
+                state: .running,
+                timeRecorded: 20.toHMS()
+            )
+        )
+
+        // When
+        let sut = CameraView(viewModel: viewModel)
+
+        // Then
+        assertSnapshotForAllDevices(sut, orientation: .landscapeRight)
     }
 
     // MARK: - Flash Toggle Tests

@@ -256,8 +256,8 @@ final class TruvideoSdkMediaInterfaceImp: TruvideoSdkMediaInterface {
     ///
     /// - Parameter status: The status to filter uploads by. If `nil`, all uploads are streamed.
     /// - Returns: A stream of file upload requests.
-    func streamFileUploadRequests(byStatus status: TruvideoSdkMediaUploadRequest
-        .Status? = nil
+    func streamFileUploadRequests(
+        byStatus status: TruvideoSdkMediaUploadRequest.Status? = nil
     ) -> TruvideoSdkMediaInterface.TruvideoSdkMediaFileUploadStreams {
         uploadEngine.streamUploads(byStatus: status)
     }

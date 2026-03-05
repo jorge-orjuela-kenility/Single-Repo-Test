@@ -17,7 +17,7 @@ All frameworks are versioned and released together.
 We operate a **single release train** across the SDK:
 
 -   **One version** for the whole monorepo (e.g. `1.0.0` or
-    `1.0.0.RC-1`)
+    `1.0.0-RC.1`)
 -   **One internal tag** per release (e.g. `1.0.0`)
 -   **One external distribution repository:**\
     `Truvideo/truvideo-sdk-ios-core`
@@ -77,13 +77,13 @@ The same base version is applied to all frameworks.
 
   Channel   Format
   --------- --------------
-  RC        `1.2.0.RC-N`
+  RC        `1.2.0-RC.N`
   PROD      `1.2.0`
 
 ### RC
 
--   Base version is not bumped **when the latest tag is already an RC** (e.g. `1.0.0.RC-2` → next is `1.0.0.RC-3`).
--   **When the latest tag is a production tag** (e.g. `1.0.0`), the next RC uses the **bumped** version (from conventional commits since that tag) with **`.RC-1`** (e.g. `1.0.1.RC-1` or `1.1.0.RC-1`).
+-   Base version is not bumped **when the latest tag is already an RC** (e.g. `1.0.0-RC.2` → next is `1.0.0-RC.3`).
+-   **When the latest tag is a production tag** (e.g. `1.0.0`), the next RC uses the **bumped** version (from conventional commits since that tag) with **`.RC-1`** (e.g. `1.0.1.RC-1` or `1.1.0-RC.1`).
 -   So: first RCs after a prod release start at `.RC-1` for the new version; RCs for the same base increment N.
 
 ### PROD
@@ -160,7 +160,7 @@ Tag format:
 
     <version>
 
-Examples: - `1.2.0.RC-3` - `1.3.0`
+Examples: - `1.2.0-RC.3` - `1.3.0`
 
 ------------------------------------------------------------------------
 

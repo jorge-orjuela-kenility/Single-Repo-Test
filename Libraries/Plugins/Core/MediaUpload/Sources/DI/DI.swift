@@ -19,14 +19,6 @@ struct AuthTokenProviderDependencyKey: DependencyKey {
     static let defaultValue: any AuthTokenProvider = BearerTokenProvider()
 }
 
-/// Provides a `DependencyKey` for injecting a `EnvironmentDependencyKey` dependency.
-///
-/// `EnvironmentDependencyKey` is used by the dependency system to resolve the default `Environment`.
-struct EnvironmentDependencyKey: DependencyKey {
-    /// The default configuration used if none is explicitly set.
-    static let defaultValue = Environment.prod
-}
-
 /// Dependency key for resolving an `EventEmitter` implementation.
 ///
 /// This abstracts the event emission system responsible for broadcasting operation events.
@@ -76,12 +68,6 @@ extension DependencyValues {
     var authTokenProvider: any AuthTokenProvider {
         get { self[AuthTokenProviderDependencyKey.self] }
         set { self[AuthTokenProviderDependencyKey.self] = newValue }
-    }
-
-    /// Accessor for resolving or overriding the current `Environment`.
-    var environment: Environment {
-        get { self[EnvironmentDependencyKey.self] }
-        set { self[EnvironmentDependencyKey.self] = newValue }
     }
 
     /// Accessor for resolving or overriding the current `EventEmitter` implementation.

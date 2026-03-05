@@ -9,7 +9,7 @@ import Foundation
 import Networking
 import NetworkingTesting
 import Testing
-import Utilities
+import TruVideoFoundation
 
 @testable import CloudStorageKit
 

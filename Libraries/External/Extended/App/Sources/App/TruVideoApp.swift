@@ -638,6 +638,7 @@ private extension DeviceSetting {
         isAutoPlayEnabled: false,
         isCameraModuleEnabled: false,
         isNoiseCancellingEnabled: false,
+        isStreamingUploadEnabled: false,
         s3Configuration: DeviceSetting.S3Configuration(
             bucketName: "",
             bucketForLogs: "",

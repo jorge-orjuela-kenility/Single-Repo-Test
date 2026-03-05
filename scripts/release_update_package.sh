@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-#!/usr/bin/env bash
 set -Eeuo pipefail
 
 REPO_DIR=""
@@ -53,7 +52,6 @@ download_base = "$DOWNLOAD_BASE".rstrip("/")
 allow_missing = "$ALLOW_MISSING".lower() == "true"
 
 def inject_tag_into_download_url(content):
-    # FIXED: use \g<1> to prevent invalid group reference (e.g. \17)
     pattern = rf"({re.escape(download_base)}/)([^/]+)(/)"
     return re.sub(pattern, rf"\g<1>{version}\g<3>", content)
 
@@ -66,7 +64,7 @@ def update_checksums(content, checksums):
             continue
 
         file_pattern = re.escape(file_name)
-        pattern = rf"({file_pattern}.*?checksum:\s*\")([^\"]+)(\")"
+        pattern = rf"({file_pattern}.*?checksum:\s*\")([^\"]*)(\")"
 
         new_content, count = re.subn(
             pattern,

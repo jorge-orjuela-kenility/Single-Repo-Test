@@ -47,6 +47,7 @@ build:
 	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdk -sdk iphonesimulator -destination '$(SIM_DEST)' build
 	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdkTesting -sdk iphonesimulator -destination '$(SIM_DEST)' build
 	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdkMedia -sdk iphonesimulator -destination '$(SIM_DEST)' build
+	xcodebuild -project TruvideoSDK.xcodeproj -scheme TruvideoSdkVideo -sdk iphonesimulator -destination '$(SIM_DEST)' build
 	@echo "All frameworks built successfully!"
 
 # Build specific framework by scheme
@@ -86,6 +87,7 @@ xcframeworks:
 	$(MAKE) framework SCHEME=TruVideoMediaUpload
 	$(MAKE) framework SCHEME=TruvideoSdkCamera
 	$(MAKE) framework SCHEME=TruvideoSdkMedia
+	$(MAKE) framework SCHEME=TruvideoSdkVideo
 	@echo "All XCFrameworks created in DerivedData/XCFrameworks/"
 
 # Open Xcode project
@@ -111,6 +113,7 @@ test:
 	xcodebuild test -project TruvideoSDK.xcodeproj -scheme TruvideoSdk -sdk iphonesimulator -destination '$(SIM_DEST)'
 	xcodebuild test -project TruvideoSDK.xcodeproj -scheme TruvideoSdkMedia -sdk iphonesimulator -destination '$(SIM_DEST)'
 	xcodebuild test -project TruvideoSDK.xcodeproj -scheme TruVideoMediaUpload -sdk iphonesimulator -destination '$(SIM_DEST)'
+	xcodebuild test -project TruvideoSDK.xcodeproj -scheme TruvideoSdkVideo -sdk iphonesimulator -destination '$(SIM_DEST)'
 	@echo "All tests completed!"
 
 # Clean generated files

@@ -8,6 +8,36 @@ import Foundation
 public typealias Metadata = [String: MetadataValue]
 
 extension Metadata {
+    /// A JSON-compatible dictionary representation of the metadata.
+    ///
+    /// This property transforms the `Metadata` (a `[String: MetadataValue]`) into a
+    /// Foundation-friendly `[String: Any]` structure by recursively unwrapping each
+    /// `MetadataValue` into its raw value:
+    /// - `String`
+    /// - `Int`
+    /// - `Double`
+    /// - `Bool`
+    /// - `[Any]` (arrays of raw values)
+    /// - `[String: Any]` (dictionaries of raw values)
+    ///
+    /// The resulting dictionary is suitable for JSON serialization with
+    /// `JSONSerialization`, network payload construction, logging, or any API that
+    /// requires plain Foundation JSON types.
+    ///
+    /// Notes:
+    /// - Values that cannot be represented as JSON primitives are omitted during
+    ///   the recursive unwrapping performed by `MetadataValue.rawValue`.
+    /// - If you need a JSON string instead of a dictionary, consider using
+    ///   `prettify()` which encodes the metadata with `JSONEncoder`.
+    ///
+    /// - Returns: A `[String: Any]` dictionary that mirrors the metadata contents,
+    ///            recursively unwrapped into JSON-compatible Foundation types.
+    public var dictionary: [String: Any] {
+        self.reduce(into: [:]) { result, entry in
+            result[entry.key] = entry.value.rawValue
+        }
+    }
+
     /// Converts a metadata dictionary into a compact JSON string representation.
     ///
     /// This method serializes the dictionary into JSON using `JSONSerialization` and returns it
@@ -46,6 +76,35 @@ public enum MetadataValue: Sendable, Hashable {
 
     /// A metadata value which is a `String`.
     case string(String)
+
+    /// Returns the raw value represented by the `MetadataValue`,
+    /// recursively unwrapping arrays and dictionaries.
+    var rawValue: Any? {
+        switch self {
+        case let .array(array):
+            array.map(\.rawValue)
+
+        case let .bool(bool):
+            bool
+
+        case let .dictionary(dictionary):
+            dictionary.reduce(into: [String: Any]()) { result, entry in
+                let metadataValue = entry.value
+                guard let value = metadataValue.rawValue else { return }
+
+                result[entry.key] = value
+            }
+
+        case let .double(double):
+            double
+
+        case let .int(int):
+            int
+
+        case let .string(string):
+            string
+        }
+    }
 }
 
 extension MetadataValue: CustomStringConvertible {

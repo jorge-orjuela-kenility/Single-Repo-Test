@@ -19,6 +19,9 @@ public struct DeviceSetting: Codable, Sendable {
     /// Indicates whether noise cancellation is enabled for the device.
     public let isNoiseCancellingEnabled: Bool
 
+    /// Feature flag that controls stream upload behavior.
+    public let isStreamingUploadEnabled: Bool
+
     /// AWS S3 storage configuration for the device.
     public let s3Configuration: S3Configuration
 
@@ -110,6 +113,7 @@ public struct DeviceSetting: Codable, Sendable {
         case isAutoPlayEnabled = "enabledAutoPlay"
         case isCameraModuleEnabled = "cameraModule"
         case isNoiseCancellingEnabled = "noiseCancelling"
+        case isStreamingUploadEnabled = "streamingUpload"
         case s3Configuration = "credentials"
     }
 
@@ -121,16 +125,37 @@ public struct DeviceSetting: Codable, Sendable {
     ///   - isAutoPlayEnabled: Indicates whether auto play is enabled for the device.
     ///   - isCameraModuleEnabled: A boolean indicating whether the camera module is active.
     ///   - isNoiseCancellingEnabled: Indicates whether noise cancellation is enabled for the device.
+    ///   - isStreamingUploadEnabled: Feature flag that enables/disables stream upload behavior.
     ///   - s3Configuration: AWS S3 storage configuration for the device.
     public init(
         isAutoPlayEnabled: Bool,
         isCameraModuleEnabled: Bool,
         isNoiseCancellingEnabled: Bool,
+        isStreamingUploadEnabled: Bool,
         s3Configuration: S3Configuration
     ) {
         self.isAutoPlayEnabled = isAutoPlayEnabled
         self.isCameraModuleEnabled = isCameraModuleEnabled
         self.isNoiseCancellingEnabled = isNoiseCancellingEnabled
+        self.isStreamingUploadEnabled = isStreamingUploadEnabled
         self.s3Configuration = s3Configuration
+    }
+
+    // MARK: - Decodable
+
+    /// Creates a new instance by decoding from the given decoder.
+    ///
+    /// This initializer throws an error if reading from the decoder fails, or
+    /// if the data read is corrupted or otherwise invalid.
+    ///
+    /// - Parameter decoder: The decoder to read data from.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        isAutoPlayEnabled = try container.decode(Bool.self, forKey: .isAutoPlayEnabled)
+        isCameraModuleEnabled = try container.decode(Bool.self, forKey: .isCameraModuleEnabled)
+        isNoiseCancellingEnabled = try container.decode(Bool.self, forKey: .isNoiseCancellingEnabled)
+        isStreamingUploadEnabled = try container.decode(Bool.self, forKey: .isStreamingUploadEnabled)
+        s3Configuration = try container.decode(S3Configuration.self, forKey: .s3Configuration)
     }
 }

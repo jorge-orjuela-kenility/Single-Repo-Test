@@ -155,7 +155,7 @@ struct HTTPURLDataRequestTests {
 
         // Then
         #expect(response.data != nil)
-        #expect(response.result.failure == nil)
+        #expect(response.error == nil)
         #expect(response.value != nil)
     }
 
@@ -223,7 +223,7 @@ struct HTTPURLDataRequestTests {
 
         // Then
         #expect(response.data != nil)
-        #expect(response.result.failure == nil)
+        #expect(response.error == nil)
         #expect(response.value != nil)
     }
 
@@ -322,7 +322,7 @@ struct HTTPURLDataRequestTests {
 
         // Then
         #expect(response.data != nil)
-        #expect(response.result.failure == nil)
+        #expect(response.error == nil)
         #expect(response.value != nil)
     }
 

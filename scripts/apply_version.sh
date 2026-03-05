@@ -144,6 +144,7 @@ path_for_key () {
     TruVideoMediaUpload) echo "Libraries/Plugins/Core/MediaUpload|Libraries/Plugins/Core/MediaUpload/Sources" ;;
     TruvideoSdkCamera)   echo "Libraries/Plugins/External/Camera|Libraries/Plugins/External/Camera/Sources" ;;
     TruvideoSdkMedia)    echo "Libraries/Plugins/External/Media|Libraries/Plugins/External/Media/Sources" ;;
+    TruvideoSdkVideo)    echo "Libraries/Plugins/External/Media|Libraries/Plugins/External/Video/Sources" ;;
     *) return 1 ;;
   esac
 }

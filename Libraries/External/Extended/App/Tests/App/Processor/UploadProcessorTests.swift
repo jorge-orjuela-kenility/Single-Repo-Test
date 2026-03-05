@@ -8,8 +8,8 @@ import Foundation
 import Network
 import Telemetry
 import Testing
+import TruVideoFoundation
 import TruvideoSdkTesting
-import Utilities
 import UtilitiesTesting
 
 @testable import TruvideoSdk

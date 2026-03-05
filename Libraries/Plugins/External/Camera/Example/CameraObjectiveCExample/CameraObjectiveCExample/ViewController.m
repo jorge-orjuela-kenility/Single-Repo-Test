@@ -205,8 +205,7 @@ static const NSInteger kDefaultVideoDurationSeconds = 60;
                      imageFormat:self.imageFormat
                       lensFacing:self.lensFacing
                              mode:mode
-                       outputPath:@""
-                   streamingUpload:NO];
+                       outputPath:@""];
 
     __weak typeof(self) weakSelf = self;
     [self presentTruvideoSdkCameraViewWithPreset:configuration onComplete:^(TruvideoSdkCameraResult * _Nonnull result) {
@@ -338,4 +337,3 @@ static const NSInteger kDefaultVideoDurationSeconds = 60;
 }
 
 @end
-

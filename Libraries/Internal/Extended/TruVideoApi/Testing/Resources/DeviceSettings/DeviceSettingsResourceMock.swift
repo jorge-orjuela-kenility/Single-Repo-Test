@@ -55,6 +55,7 @@ public final class DeviceSettingsResourceMock: DeviceSettingsResource, @unchecke
             isAutoPlayEnabled: true,
             isCameraModuleEnabled: true,
             isNoiseCancellingEnabled: false,
+            isStreamingUploadEnabled: false,
             s3Configuration: DeviceSetting.S3Configuration(
                 bucketName: "mock-bucket",
                 bucketForLogs: "logs",

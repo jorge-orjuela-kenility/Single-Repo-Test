@@ -286,7 +286,7 @@ private struct TopBar: View {
         .allowsHitTesting(!viewModel.medias.isEmpty)
         .disabled(viewModel.state == .running)
         .scaledFullScreenCover(isPresented: $isPresented) {
-            GalleryView(medias: $viewModel.medias, isPresented: $isPresented)
+            GalleryView(medias: $viewModel.medias, isPresented: $isPresented, streams: $viewModel.streams)
         }
     }
 }

@@ -48,6 +48,7 @@ struct DeviceSettingResourceTests {
             // Then
             #expect(result.isAutoPlayEnabled == deviceSetting.isAutoPlayEnabled)
             #expect(result.isNoiseCancellingEnabled == deviceSetting.isNoiseCancellingEnabled)
+            #expect(result.isStreamingUploadEnabled == deviceSetting.isStreamingUploadEnabled)
             #expect(result.s3Configuration.bucketName == deviceSetting.s3Configuration.bucketName)
         }
     }
@@ -57,11 +58,13 @@ struct DeviceSettingResourceTests {
         await withDependencyValues { dependencyValues in
             // Given
             let dataRequest = DataRequestMock()
+            let sessionManager = SessionManagerMock()
             let sut = DeviceSettingsResourceImpl()
 
             // When
             session.dataRequest = dataRequest
             dependencyValues.session = session
+            dependencyValues.sessionManager = sessionManager
 
             // Then
             await #expect {

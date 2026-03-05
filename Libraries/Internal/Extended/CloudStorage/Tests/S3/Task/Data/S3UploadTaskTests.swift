@@ -6,7 +6,7 @@ import AWSS3
 import CloudStorageKitTesting
 import Foundation
 import Testing
-import Utilities
+import TruVideoFoundation
 
 @testable import CloudStorageKit
 

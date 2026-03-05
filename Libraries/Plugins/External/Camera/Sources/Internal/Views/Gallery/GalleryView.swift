@@ -3,6 +3,7 @@
 //
 
 import SwiftUI
+internal import TruVideoMediaUpload
 
 struct GalleryView: View {
     // MARK: - Binding Properties
@@ -12,6 +13,9 @@ struct GalleryView: View {
 
     /// A Boolean value that indicates whether the gallery is currently presented.
     @Binding var isPresented: Bool
+
+    /// A collection of active media upload streams.
+    @Binding var streams: [MUStream]
 
     // MARK: - Environment Properties
 
@@ -35,7 +39,7 @@ struct GalleryView: View {
             }
             .padding(theme.spacingTheme.md)
 
-            GalleryGrid(medias: $medias, isPresented: $isPresented, theme: theme)
+            GalleryGrid(medias: $medias, isPresented: $isPresented, streams: $streams, theme: theme)
                 .accessibilityIdentifier(GalleryView.AccessibilityLabel.galleryGrid)
         }
         .accessibilityElement(children: .contain)

@@ -29,18 +29,39 @@ fi
 
 echo "Generating changelog for range: $RANGE" >&2
 
-COMMITS="$(git log --no-merges --pretty=format:'%s' $RANGE || true)"
+ALLOWED_SCOPES_REGEX='(truvideoSdk|truvideoSdkCamera|truvideoSdkMedia|truvideoSdkVideo|truvideoSdkImage)'
+RAW_COMMITS="$(git log --no-merges --pretty=format:'%s' $RANGE || true)"
+
+FILTERED_COMMITS="$(
+  echo "$RAW_COMMITS" \
+    | grep -E "^[a-z]+\\([^)]*${ALLOWED_SCOPES_REGEX}[^)]*\\)(!)?: " \
+    || true
+)"
+
+SANITIZED_COMMITS="$(
+  echo "$FILTERED_COMMITS" \
+    | sed -E 's/^([a-z]+)\([^)]*\)(!)?: /\1\2: /' \
+    | sed -E 's/\[?SDK-[0-9]+\]?:[[:space:]]*//g' \
+    | sed -E 's/[[:space:]]*\(#([0-9]+)\)//g' \
+    | sed -E 's/\[[^]]+\]//g' \
+    | sed -E 's/[[:space:]]{2,}/ /g' \
+    | sed -E 's/^[[:space:]]+//g' \
+    | sed -E 's/[[:space:]]+$//g' \
+    || true
+)"
+
+COMMITS="$SANITIZED_COMMITS"
 
 extract_type() {
   local type="$1"
-  echo "$COMMITS" | grep -E "^${type}(\([^)]+\))?(!)?: " || true
+  echo "$COMMITS" | grep -E "^${type}(!)?: " || true
 }
 
-to_bullets() {
-  sed -E 's/^[a-z]+(\([^)]+\))?(!)?: /- /'
+to_bullets() {  
+  sed -E 's/^[a-z]+(!)?: /- /'
 }
 
-BREAKING="$(echo "$COMMITS" | grep -E '^[a-z]+(\([^)]+\))?!: ' | to_bullets || true)"
+BREAKING="$(echo "$COMMITS" | grep -E '^[a-z]+!: ' | to_bullets || true)"
 FEATS="$(extract_type feat | to_bullets)"
 FIXES="$(extract_type fix | to_bullets)"
 PERF="$(extract_type perf | to_bullets)"
@@ -55,7 +76,7 @@ REVERTS="$(extract_type revert | to_bullets)"
 
 OTHER="$(
   echo "$COMMITS" \
-    | grep -Ev '^(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\([^)]+\))?(!)?: ' \
+    | grep -Ev '^(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(!)?: ' \
     | sed '/^\s*$/d' \
     | sed 's/^/- /' \
     || true

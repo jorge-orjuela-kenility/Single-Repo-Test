@@ -1,6 +1,7 @@
 {
     "cameraModule" : true,
     "noiseCancelling" : true,
+    "streamingUpload" : true,
     "credentials" : {
         "identityID" : "us-west-2:4a3e7d6d-dc4a-c961-3105-1251df6dd873",
         "identityPoolID" : "us-west-2:183c7187-1d3b-445b-b1d3-f348406a0499",

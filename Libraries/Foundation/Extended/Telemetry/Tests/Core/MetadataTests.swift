@@ -6,7 +6,7 @@ import Foundation
 import Testing
 
 @testable import Telemetry
-@testable import Utilities
+@testable import TruVideoFoundation
 
 struct MetadataTests {
     // MARK: - Tests

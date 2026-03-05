@@ -6,13 +6,12 @@ import DI
 import Testing
 import TruVideoApi
 import TruVideoApiTesting
-import TruVideoMediaUpload
+import TruVideoFoundation
 import TruvideoSdkTesting
 @_spi(Internal) import TruVideoRuntime
-import Utilities
 import UtilitiesTesting
 
-@_spi(Internal) import TruvideoSdk
+@testable import TruvideoSdk
 
 struct TruVideoAppTests {
     // MARK: - Private Properties
@@ -177,7 +176,8 @@ struct TruVideoAppTests {
             deviceSettingResource.deviceSetting = DeviceSetting(
                 isAutoPlayEnabled: true,
                 isCameraModuleEnabled: true,
-                isNoseCancellingEnabled: false,
+                isNoiseCancellingEnabled: false,
+                isStreamingUploadEnabled: false,
                 s3Configuration: DeviceSetting.S3Configuration(
                     bucketName: "mock-bucket",
                     bucketForLogs: "logs",

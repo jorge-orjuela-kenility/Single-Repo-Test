@@ -10,7 +10,7 @@ internal import TruVideoRuntime
 
 /// C-callable entry point for ObjC +load to avoid importing the generated -Swift.h (fixes ScanDependencies).
 @_cdecl("truVideoSDKLibraryRegistry")
-func truVideoSDKLibraryRegister() {
+func truVideoSDKLibraryRegistry() {
     LibraryRegistry.register(TruVideoSDKLibrary())
 }
 

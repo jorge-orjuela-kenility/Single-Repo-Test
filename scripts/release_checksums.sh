@@ -34,7 +34,6 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
-# String list (newline-separated), bash-3 safe
 ZIPS="$(find "$DIR" -type f -name "*.xcframework.zip" | sort || true)"
 
 if [ -z "$ZIPS" ]; then
@@ -52,7 +51,6 @@ first="true"
 echo "== Computing SwiftPM checksums ==" >&2
 echo "Directory: $DIR" >&2
 
-# Avoid piping into while (subshell). Use a temp file.
 tmp="$(mktemp)"
 printf "%s\n" "$ZIPS" > "$tmp"
 

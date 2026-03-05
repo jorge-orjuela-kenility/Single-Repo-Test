@@ -11,7 +11,8 @@ extension DeviceSetting {
         DeviceSetting(
             isAutoPlayEnabled: true,
             isCameraModuleEnabled: true,
-            isNoseCancellingEnabled: false,
+            isNoiseCancellingEnabled: false,
+            isStreamingUploadEnabled: false,
             s3Configuration: DeviceSetting.S3Configuration(
                 bucketName: "test-bucket",
                 bucketForLogs: "logs",

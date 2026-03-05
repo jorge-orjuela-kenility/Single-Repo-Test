@@ -65,19 +65,6 @@ public struct MediaResourceImpl: MediaResource {
     @Dependency(\.session)
     private var session: any Session
 
-    // MARK: - Types
-
-    /// An error type representing failures that occur when interacting with media resources.
-    ///
-    /// `MediaResourceError` defines the specific error conditions that may arise when
-    /// requesting, retrieving, or operating on media items. Use this type to signal
-    /// well-defined error scenarios within media gateways, repositories, and domain
-    /// logic.
-    public enum MediaResourceError: Error {
-        /// The requested media item does not exist or could not be retrieved.
-        case notFound
-    }
-
     // MARK: - Initializer
 
     /// Creates a new instance of `MediaResourceImpl`.
@@ -129,25 +116,17 @@ public struct MediaResourceImpl: MediaResource {
     ///   when the request fails or the media cannot be retrieved.
     public func find(for id: UUID) async throws(UtilityError) -> Media {
         do {
-            let url = environment.baseURL.appending("/api/media/search")
-            let parameters = [
-                "ids": [id.uuidString.lowercased()]
-            ]
+            let url = environment.baseURL.appending("/api/v2/media/\(id.uuidString.lowercased())")
 
             return try await session.request(
                 url,
-                method: .post,
-                parameters: parameters,
-                encoder: .json,
+                method: .get,
                 middleware: Middleware(interceptors: [AuthTokenInterceptor()], retriers: [])
             )
             .validate()
-            .serializing(PaginatedResponse<Media>.self)
+            .serializing(Media.self)
             .result
             .get()
-            .content
-            .first
-            .unwrap(or: MediaResourceError.notFound)
         } catch {
             throw UtilityError(kind: .MediaResourceErrorReason.findMediaFailed, underlyingError: error)
         }
@@ -168,7 +147,7 @@ public struct MediaResourceImpl: MediaResource {
             let parameters = parameters.build()
 
             return try await session.request(
-                environment.baseURL.appending("/api/media/search?\(parameters.queryParameters)"),
+                environment.baseURL.appending("/api/v2/media/search?\(parameters.queryParameters)"),
                 method: .post,
                 parameters: parameters.bodyParameters,
                 encoder: .json,

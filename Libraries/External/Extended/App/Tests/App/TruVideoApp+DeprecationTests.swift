@@ -7,8 +7,8 @@ import StorageKitTesting
 import Testing
 import TruVideoApi
 import TruVideoApiTesting
+import TruVideoFoundation
 import TruvideoSdkTesting
-import Utilities
 
 @testable import TruvideoSdk
 

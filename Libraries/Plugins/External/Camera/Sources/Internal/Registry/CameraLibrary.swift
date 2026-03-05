@@ -14,7 +14,7 @@ func truVideoCameraLibraryRegistry() {
 private struct CameraLibrary: Library {
     /// The unique name of the library.
     var name: String {
-        "TruvideoSdkCamera"
+        "TruVideoSdkCamera"
     }
 
     /// The current semantic version of the library.

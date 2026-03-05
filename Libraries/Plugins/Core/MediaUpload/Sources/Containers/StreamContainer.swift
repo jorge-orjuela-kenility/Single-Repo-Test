@@ -54,6 +54,7 @@ open class StreamContainer: @unchecked Sendable {
     // MARK: - Private Properties
 
     private let database: any Database
+    private var enqueueTask: Task<Void, Never>?
     private let state = State()
     private let streamsDirectoryURL: URL
     private let syncEngine: SyncEngine
@@ -186,6 +187,8 @@ open class StreamContainer: @unchecked Sendable {
     ///            database retrieval fails.
     open func retrieveStreams(where isIncluded: (MUStream) -> Bool = { _ in true }) async throws -> [MUStream] {
         do {
+            if let task = enqueueTask { await task.value }
+
             let activeStreams = try await database.retrieveActiveStreams()
             let predicate: NSPredicate = (\StreamModel.id << activeStreams.map(\.id))
             let streams = try await database.retrieve(of: StreamModel.self, where: !predicate)
@@ -237,6 +240,8 @@ open class StreamContainer: @unchecked Sendable {
     open func streams(where isIncluded: @escaping (MUStream) -> Bool = { _ in true }) -> AsyncStream<[MUStream]> {
         AsyncStream { continuation in
             let task = Task {
+                if let task = enqueueTask { await task.value }
+
                 let asyncSequence = await database.observeChanges(of: StreamModel.self)
 
                 for await streams in asyncSequence where !Task.isCancelled {
@@ -267,7 +272,9 @@ open class StreamContainer: @unchecked Sendable {
     // MARK: - Private methods
 
     private func enqueuePendingOperations() {
-        Task {
+        guard enqueueTask == nil else { return }
+
+        enqueueTask = Task {
             do {
                 let streams = try await database.retrieveActiveStreams()
 
@@ -281,12 +288,16 @@ open class StreamContainer: @unchecked Sendable {
                     }
                 }
             } catch {
-                print("Failed to enqueue pending operations")
+                print("Failed to enqueue pending operations: \(error)")
             }
         }
     }
 
     private func makeStream(for model: StreamModel) async -> MUStream {
+        if let existing = await withActor(state, { $0.activeStreams[model.id] }) {
+            return existing
+        }
+
         let registry = PartRegistry()
         let producer = SyncOperationProducer(stream: model, database: database, partRegistry: registry)
         let stream = MUStream(
@@ -298,9 +309,8 @@ open class StreamContainer: @unchecked Sendable {
         )
 
         if ![.cancelled, .completed].contains(model.status) {
-            syncEngine.add(producer)
-
             await withActor(state) { state in
+                syncEngine.add(producer)
                 state.activeStreams[stream.id] = stream
             }
         }

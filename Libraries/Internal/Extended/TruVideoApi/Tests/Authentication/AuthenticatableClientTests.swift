@@ -34,11 +34,12 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
             let apiKey = "test-api-Key"
             let signature = "signature"
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             dependencies.environment = .beta
@@ -74,9 +75,10 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             dependencies.environment = .beta
@@ -114,10 +116,11 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
             let externalId = "QA"
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             dependencies.environment = .beta
@@ -150,9 +153,10 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
             let deviceId = "36BBA8E7-A9C6-4F00-B4E1-F6BA888FF093"
 
             // When
@@ -188,11 +192,12 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
             let apiKey = "test-api-Key"
             let signature = "signature"
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             dependencies.environment = .beta
@@ -226,9 +231,10 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             dependencies.environment = .beta
@@ -265,9 +271,10 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             dependencies.environment = .beta
@@ -302,9 +309,10 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             dependencies.environment = .beta
@@ -337,9 +345,10 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
             let authToken = AuthToken.mock
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
             let response = HTTPURLResponse(
                 url: URL(string: "https://beta.truvideo.com/api/device")!,
                 statusCode: 200,
@@ -387,8 +396,9 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
             let response = HTTPURLResponse(
                 url: URL(string: "https://beta.truvideo.com/api/device")!,
                 statusCode: 415,
@@ -446,8 +456,9 @@ struct AuthenticatableClientTests {
             // Given
             let dataRequest = DataRequestMock()
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             dependencies.environment = .beta
@@ -481,8 +492,9 @@ struct AuthenticatableClientTests {
         try await withDependencyValues { dependencies in
             // Given
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             try sessionManager.set(AuthSession.mock)
@@ -500,8 +512,9 @@ struct AuthenticatableClientTests {
         try await withDependencyValues { dependencies in
             // Given
             let session = SessionMock()
+            let tokenRefresher = TokenRefresherMock()
             let sessionManager = SessionManagerMock()
-            let sut = AuthenticationClient(session: session)
+            let sut = AuthenticationClient(session: session, tokenRefresher: tokenRefresher)
 
             // When
             try sessionManager.set(AuthSession.mock)

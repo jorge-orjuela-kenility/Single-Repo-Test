@@ -3,6 +3,7 @@
 //
 
 import SwiftUI
+internal import TruVideoMediaUpload
 import UIKit
 
 /// A delegate that notifies about updates in a `GalleryGridViewController`.
@@ -12,7 +13,23 @@ protocol GalleryGridViewControllerDelegate: AnyObject {
     /// - Parameters:
     ///   - viewController: The gallery grid view controller sending the update.
     ///   - medias: The updated list of media items.
-    func galleryGridViewControllerDidUpdateMedias(_ viewController: GalleryGridViewController, medias: [Media])
+    ///   - streams: The updated active upload streams related to the media items.
+    func galleryGridViewControllerDidUpdateState(
+        _ viewController: GalleryGridViewController,
+        medias: [Media],
+        streams: [MUStream]
+    )
+}
+
+extension GalleryGridViewControllerDelegate {
+    /// Called when the media items have been updated in the gallery grid.
+    ///
+    /// - Parameters:
+    ///   - viewController: The gallery grid view controller sending the update.
+    ///   - medias: The updated list of media items.
+    func galleryGridViewControllerDidUpdateState(_ viewController: GalleryGridViewController, medias: [Media]) {
+        galleryGridViewControllerDidUpdateState(viewController, medias: medias, streams: [])
+    }
 }
 
 /// A SwiftUI wrapper that hosts a `GalleryGridViewController`
@@ -28,6 +45,9 @@ struct GalleryGrid: UIViewControllerRepresentable {
     /// A Boolean value that controls whether the gallery is presented.
     @Binding var isPresented: Bool
 
+    /// A collection of active media upload streams.
+    @Binding var streams: [MUStream]
+
     // MARK: - Properties
 
     /// The theme configuration applied to the grid.
@@ -41,7 +61,7 @@ struct GalleryGrid: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> GalleryGridViewController {
-        let viewController = GalleryGridViewController(medias: medias, theme: theme)
+        let viewController = GalleryGridViewController(medias: medias, streams: streams, theme: theme)
         viewController.deleteDelegate = context.coordinator
         return viewController
     }
@@ -69,8 +89,13 @@ struct GalleryGrid: UIViewControllerRepresentable {
 
         // MARK: - GalleryGridViewControllerDelegate
 
-        func galleryGridViewControllerDidUpdateMedias(_ viewController: GalleryGridViewController, medias: [Media]) {
+        func galleryGridViewControllerDidUpdateState(
+            _ viewController: GalleryGridViewController,
+            medias: [Media],
+            streams: [MUStream]
+        ) {
             parent.medias = medias
+            parent.streams = streams
             if medias.isEmpty {
                 parent.isPresented = false
             }
@@ -86,6 +111,7 @@ final class GalleryGridViewController: UIViewController {
     // MARK: - Private Properties
 
     private var medias: [Media]
+    private var streams: [MUStream]
     private let theme: Theme
 
     // MARK: - Properties
@@ -134,9 +160,11 @@ final class GalleryGridViewController: UIViewController {
     ///
     /// - Parameters:
     ///   - medias: The array of media items to display in the grid.
+    ///   - streams: The collection of active media upload streams.
     ///   - theme: The theme used to configure cell appearance.
-    init(medias: [Media], theme: Theme) {
+    init(medias: [Media], streams: [MUStream], theme: Theme) {
         self.medias = medias
+        self.streams = streams
         self.theme = theme
 
         super.init(nibName: nil, bundle: nil)
@@ -186,9 +214,27 @@ final class GalleryGridViewController: UIViewController {
     func deleteMedia(at index: Int) {
         guard index < medias.count else { return }
 
-        medias.remove(at: index)
-        collectionView.reloadData()
-        deleteDelegate?.galleryGridViewControllerDidUpdateMedias(self, medias: medias)
+        let media = medias[index]
+
+        guard let stream = streams.first(where: { $0.fileURL == media.url }) else {
+            medias = medias.filter { $0.url != media.url }
+            collectionView.reloadData()
+            deleteDelegate?.galleryGridViewControllerDidUpdateState(self, medias: medias)
+            return
+        }
+
+        Task {
+            do {
+                try await stream.delete()
+                streams = streams.filter { $0.id != stream.id }
+
+                medias = medias.filter { $0.url != media.url }
+                collectionView.reloadData()
+                deleteDelegate?.galleryGridViewControllerDidUpdateState(self, medias: medias, streams: streams)
+            } catch {
+                print("Failed to delete: \(error)")
+            }
+        }
     }
 
     /// Returns the frame of the media item’s image view at the given index, in window coordinates.
