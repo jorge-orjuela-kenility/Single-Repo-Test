@@ -47,23 +47,7 @@ mkdir -p "$FRAMEWORKS_DIR" "$UTILS_EXTRACT_DIR" "$DIST_ROOT"
 
 echo "== Copying generated SDK xcframeworks =="
 
-if [ ! -d "$XCROOT" ]; then
-  echo "ERROR: XCFramework root does not exist: $XCROOT" >&2
-  exit 1
-fi
-
 SDK_FRAMEWORKS="$(find "$XCROOT" -maxdepth 1 -type d -name "*.xcframework" | sort)"
-
-if [ -z "$SDK_FRAMEWORKS" ]; then
-  echo "ERROR: No SDK xcframeworks found in $XCROOT" >&2
-  exit 1
-fi
-
-printf '%s\n' "$SDK_FRAMEWORKS" | while IFS= read -r fw; do
-  [ -n "$fw" ] || continue
-  echo "  -> $(basename "$fw")"
-  cp -R "$fw" "$FRAMEWORKS_DIR"/
-done
 
 download_google_drive_file() {
   local file_id="$1"
