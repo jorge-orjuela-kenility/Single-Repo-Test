@@ -40,14 +40,20 @@ jobs:
 
       - name: Install tooling
         run: |
-          brew install jq xcodegen cocoapods || true
-          python3 -m venv .venv
+              set -Eeuo pipefail
 
-          . .venv/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install gdown
+              brew install jq xcodegen cocoapods || true
 
-          .venv/bin/gdown --version
+              python3 -m pip install --upgrade pip
+              python3 -m pip install --user gdown
+
+              echo "$HOME/Library/Python/3.*/bin"
+              python3 -m site --user-base
+
+              USER_BASE="$(python3 -m site --user-base)"
+              echo "$USER_BASE/bin" >> "$GITHUB_PATH"
+
+              "$USER_BASE/bin/gdown" --version
 
       - name: Build CocoaPods artifact
         shell: bash
