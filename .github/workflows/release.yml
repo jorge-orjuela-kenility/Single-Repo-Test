@@ -42,10 +42,10 @@ jobs:
         run: |
           brew install jq xcodegen cocoapods || true          
 
-      - name: Build CocoaPods artifact
+      - name: Download utils artifact
         shell: bash
         env:
-          COCOAPODS_UTILS_LINK: ${{ secrets.COCOAPODS_UTILS_LINK }}
+          COCOAPODS_UTILS_LINK: https://github.com/jorge-orjuela-kenility/video-utils/releases/download/1.0.0/utils.zip
         run: |
           set -Eeuo pipefail
           chmod +x scripts/build_cocoapods_artifact.sh
