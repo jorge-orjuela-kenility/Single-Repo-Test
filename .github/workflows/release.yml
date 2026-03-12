@@ -1,11 +1,6 @@
 name: Release
 
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - main
-      - "release/*"
   workflow_dispatch:
     inputs:
       cut:
@@ -45,134 +40,16 @@ jobs:
 
       - name: Install tooling
         run: |
-          brew install jq xcodegen || true
+          brew install jq xcodegen cocoapods || true
+          python3 -m venv .venv
 
-      - name: Resolve cut type and frameworks
-        id: scope
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x scripts/resolve_scope.sh
-          scripts/resolve_scope.sh
+          . .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install gdown
 
-      - name: Select Xcode
-        run: |
-          sudo xcode-select -s /Applications/Xcode_16.4.app
-          xcodebuild -version
+          .venv/bin/gdown --version
 
-      - name: Cache SwiftPM state
-        uses: actions/cache@v4
-        with:
-          path: |
-            .spm-checkouts
-            DerivedData
-            ~/Library/Caches/org.swift.swiftpm
-            ~/Library/Developer/Xcode/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', '**/Package.resolved', '**/Package.swift') }}
-          restore-keys: |
-            spm-${{ runner.os }}-
-
-      - name: Generate project
-        run: make generate
-
-      - name: Build project
-        run: make build SIM_DEST="generic/platform=iOS Simulator"
-
-      - name: Compute version
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x scripts/compute_version.sh
-
-          # Load scope file
-          if [ -f "$GITHUB_WORKSPACE/.cut_release_scope" ]; then
-            source "$GITHUB_WORKSPACE/.cut_release_scope"
-          fi
-
-          CUT_FINAL="${CUT:-}"
-          if [ -z "$CUT_FINAL" ]; then
-            CUT_FINAL="rc"
-          fi
-
-          echo "Using CUT=$CUT_FINAL"
-
-          CUT="$CUT_FINAL" ./scripts/compute_version.sh > version.json
-          cat version.json
-
-          base="$(jq -r .base version.json)"
-          full="$(jq -r .full version.json)"
-          channel="$(jq -r .channel version.json)"
-          build="$(jq -r .build version.json)"
-
-          # Fail early if parsing failed
-          if [ -z "$base" ] || [ "$base" = "null" ]; then
-            echo "Version parsing failed."
-            exit 1
-          fi
-
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "full=$full" >> "$GITHUB_OUTPUT"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "build=$build" >> "$GITHUB_OUTPUT"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
-      - name: Apply version changes
-        id: apply
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ ! -f "$GITHUB_WORKSPACE/.cut_release_scope" ]; then
-            echo "Missing .cut_release_scope"
-            exit 1
-          fi
- 
-          source "$GITHUB_WORKSPACE/.cut_release_scope"
-
-          base="${{ steps.version.outputs.base }}"
-          full="${{ steps.version.outputs.full }}"
-          channel="${{ steps.version.outputs.channel }}"
-          build="${{ steps.version.outputs.build }}"
-          
-          if [ -z "${AFF:-}" ] || [ -z "$base" ] || [ -z "$full" ] || [ -z "$channel" ] || [ -z "$build" ]; then
-            echo "Missing required env vars."
-            echo "Required: AFF, VERSION_BASE, VERSION_FULL, CHANNEL, BUILD_NUM"
-            exit 1
-          fi
-
-          chmod +x ./scripts/apply_version.sh
-
-          AFF="$AFF" \
-          VERSION_BASE="$base" \
-          VERSION_FULL="$full" \
-          CHANNEL="$channel" \
-          BUILD_NUM="$build" \
-          ./scripts/apply_version.sh
-
-      - name: Generate changelog
-        id: changelog
-        env:
-          VERSION_FULL: ${{ steps.version.outputs.full }}
-          CHANNEL: ${{ steps.version.outputs.channel }}
-        run: |
-         set -Eeuo pipefail
-         echo "VERSION_FULL=$VERSION_FULL"
-         echo "CHANNEL=$CHANNEL"
-         chmod +x ./scripts/changelog.sh
-         ./scripts/changelog.sh
-
-          echo "Preview:"
-          cat CHANGELOG.md
-
-      - name: Build XCFrameworks
-        shell: bash
-        env:
-          SIM_DEST: generic/platform=iOS Simulator
-        run: |
-          set -Eeuo pipefail
-          make xcframeworks
-
+      
       - name: Zip frameworks artifacts
         shell: bash
         run: |
@@ -214,6 +91,15 @@ jobs:
           ls -la dist
           find dist -maxdepth 1 -type f -name "*.xcframework.zip" -print
 
+      - name: Build CocoaPods artifact
+        shell: bash
+        env:
+          COCOAPODS_UTILS_LINK: ${{ secrets.COCOAPODS_UTILS_LINK }}
+        run: |
+          set -Eeuo pipefail
+          chmod +x scripts/build_cocoapods_artifact.sh
+          scripts/build_cocoapods_artifact.sh
+      
       - name: Create tag
         env:
           VERSION_FULL: ${{ steps.version.outputs.full }}
@@ -278,6 +164,14 @@ jobs:
             --checksums "$ROOT/checksums.json" \
             --download-base "https://github.com/Truvideo/truvideo-sdk-ios-core/releases/download"
 
+          chmod +x "$ROOT/scripts/release_update_podspec.sh"
+          "$ROOT/scripts/release_update_podspec.sh" \
+            --repo-dir "$ROOT/spm-repo" \
+            --version "$VERSION_FULL" \
+            --podspec-name "truvideo-sdk-core.podspec" \
+            --asset-name "TruvideoSdk.zip" \
+            --download-base "https://github.com/Truvideo/truvideo-sdk-ios-core/releases/download"
+
           chmod +x "$ROOT/scripts/release_commit_tag_push.sh"
           "$ROOT/scripts/release_commit_tag_push.sh" \
             --repo-dir "$ROOT/spm-repo" \
@@ -303,4 +197,53 @@ jobs:
             --version "$VERSION_FULL" \
             --notes-file "$ROOT/CHANGELOG.md" \
             --assets-glob "$ROOT/dist/*.xcframework.zip" \
+            --assets-glob "$ROOT/dist/TruvideoSdk.zip" \
             $PRERELEASE_FLAG
+
+      - name: Configure CocoaPods trunk token
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+          COCOAPODS_TRUNK_EMAIL: ${{ secrets.COCOAPODS_TRUNK_EMAIL }}
+        run: |
+          set -Eeuo pipefail
+
+          if [ -z "${COCOAPODS_TRUNK_TOKEN:-}" ]; then
+            echo "Missing COCOAPODS_TRUNK_TOKEN" >&2
+            exit 1
+          fi
+
+          if [ -z "${COCOAPODS_TRUNK_EMAIL:-}" ]; then
+            echo "Missing COCOAPODS_TRUNK_EMAIL" >&2
+            exit 1
+          fi
+
+          cat > ~/.netrc <<EOF
+          machine trunk.cocoapods.org
+            login ${COCOAPODS_TRUNK_EMAIL}
+            password ${COCOAPODS_TRUNK_TOKEN}
+          EOF
+
+          chmod 600 ~/.netrc
+
+      - name: Validate CocoaPods trunk session
+        run: |
+          set -Eeuo pipefail
+          pod trunk me
+
+      - name: Validate CocoaPods spec
+        run: |
+          set -Eeuo pipefail
+          cd "$GITHUB_WORKSPACE/spm-repo"
+          pod spec lint truvideo-sdk-core.podspec \
+            --allow-warnings \
+            --skip-import-validation \
+            --verbose
+
+      - name: Publish to CocoaPods
+        run: |
+          set -Eeuo pipefail
+          cd "$GITHUB_WORKSPACE/spm-repo"
+          pod trunk push truvideo-sdk-core.podspec \
+            --allow-warnings \
+            --skip-import-validation \
+            --verbose
