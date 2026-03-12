@@ -18,4 +18,10 @@ test -s "$OUTPUT" || {
   exit 1
 }
 
-echo "Downloaded to $OUTPUT"
+if ! file "$OUTPUT" | grep -qi 'Zip archive'; then
+  echo "ERROR: Downloaded file is not a zip. Google Drive returned something else." >&2
+  echo "Detected type: $(file "$OUTPUT")" >&2
+  exit 1
+fi
+
+echo "Downloaded valid zip to $OUTPUT"
