@@ -36,19 +36,31 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v unzip >/dev/null 2>&1; then
+  echo "ERROR: unzip is not installed." >&2
+  exit 1
+fi
+
 rm -rf "$PODROOT" "$UTILS_EXTRACT_DIR"
 rm -f "$UTILS_ZIP" "$OUTPUT_ZIP"
-mkdir -p "$FRAMEWORKS_DIR" "$UTILS_EXTRACT_DIR"
+mkdir -p "$FRAMEWORKS_DIR" "$UTILS_EXTRACT_DIR" "$DIST_ROOT"
 
 echo "== Copying generated SDK xcframeworks =="
-mapfile -t SDK_FRAMEWORKS < <(find "$XCROOT" -maxdepth 1 -type d -name "*.xcframework" | sort)
 
-if [ "${#SDK_FRAMEWORKS[@]}" -eq 0 ]; then
+if [ ! -d "$XCROOT" ]; then
+  echo "ERROR: XCFramework root does not exist: $XCROOT" >&2
+  exit 1
+fi
+
+SDK_FRAMEWORKS="$(find "$XCROOT" -maxdepth 1 -type d -name "*.xcframework" | sort)"
+
+if [ -z "$SDK_FRAMEWORKS" ]; then
   echo "ERROR: No SDK xcframeworks found in $XCROOT" >&2
   exit 1
 fi
 
-for fw in "${SDK_FRAMEWORKS[@]}"; do
+printf '%s\n' "$SDK_FRAMEWORKS" | while IFS= read -r fw; do
+  [ -n "$fw" ] || continue
   echo "  -> $(basename "$fw")"
   cp -R "$fw" "$FRAMEWORKS_DIR"/
 done
@@ -57,33 +69,35 @@ download_google_drive_file() {
   local file_id="$1"
   local output_path="$2"
   local cookie_file
-  local confirm_file
+  local first_response
   local confirm_token
 
   cookie_file="$(mktemp)"
-  confirm_file="$(mktemp)"
+  first_response="$(mktemp)"
 
-  cleanup() {
-    rm -f "$cookie_file" "$confirm_file"
+  cleanup_download_temp_files() {
+    rm -f "$cookie_file" "$first_response"
   }
-  trap cleanup RETURN
+
+  trap cleanup_download_temp_files RETURN
 
   echo "== Downloading Google Drive artifact =="
+  echo "   file id: $file_id"
 
   curl -fsSL -c "$cookie_file" \
     "https://drive.google.com/uc?export=download&id=${file_id}" \
-    -o "$confirm_file"
+    -o "$first_response"
 
-  if file "$confirm_file" | grep -qi 'Zip archive'; then
-    mv "$confirm_file" "$output_path"
+  if file "$first_response" | grep -qi 'Zip archive'; then
+    mv "$first_response" "$output_path"
     return 0
   fi
 
-  confirm_token="$(sed -n 's/.*confirm=\([0-9A-Za-z_-]*\).*/\1/p' "$confirm_file" | head -n 1)"
+  confirm_token="$(sed -n 's/.*confirm=\([0-9A-Za-z_-]*\).*/\1/p' "$first_response" | head -n 1)"
 
   if [ -z "$confirm_token" ]; then
     echo "ERROR: Could not obtain Google Drive confirmation token." >&2
-    echo "Make sure the file is shared correctly and the link is valid." >&2
+    echo "Make sure the file is publicly accessible or shared correctly." >&2
     return 1
   fi
 
@@ -92,17 +106,26 @@ download_google_drive_file() {
     -o "$output_path"
 }
 
+extract_google_drive_file_id() {
+  local url="$1"
+  local file_id=""
+
+  file_id="$(printf '%s' "$url" | sed -n 's#.*\/file\/d\/\([^/]*\)\/.*#\1#p')"
+
+  if [ -z "$file_id" ]; then
+    file_id="$(printf '%s' "$url" | sed -n 's/.*[?&]id=\([^&]*\).*/\1/p')"
+  fi
+
+  printf '%s' "$file_id"
+}
+
 download_file() {
   local url="$1"
   local output_path="$2"
   local file_id=""
 
   if printf '%s' "$url" | grep -q 'drive.google.com'; then
-    file_id="$(printf '%s' "$url" | sed -n 's#.*\/file\/d\/\([^/]*\)\/.*#\1#p')"
-
-    if [ -z "$file_id" ]; then
-      file_id="$(printf '%s' "$url" | sed -n 's/.*[?&]id=\([^&]*\).*/\1/p')"
-    fi
+    file_id="$(extract_google_drive_file_id "$url")"
 
     if [ -z "$file_id" ]; then
       echo "ERROR: Could not extract Google Drive file id from COCOAPODS_UTILS_LINK" >&2
@@ -123,4 +146,32 @@ if [ ! -f "$UTILS_ZIP" ]; then
   exit 1
 fi
 
+echo "== Extracting utils zip =="
 unzip -q "$UTILS_ZIP" -d "$UTILS_EXTRACT_DIR"
+
+echo "== Validating extracted utils content =="
+if [ -z "$(find "$UTILS_EXTRACT_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]; then
+  echo "ERROR: Utils zip was extracted but appears to be empty." >&2
+  exit 1
+fi
+
+echo "== Copying extracted utils into CocoaPods package =="
+find "$UTILS_EXTRACT_DIR" -mindepth 1 -maxdepth 1 | while IFS= read -r item; do
+  [ -n "$item" ] || continue
+  echo "  -> $(basename "$item")"
+  cp -R "$item" "$PODROOT"/
+done
+
+echo "== Creating output archive =="
+(
+  cd "$DIST_ROOT"
+  zip -qry "$(basename "$OUTPUT_ZIP")" "$(basename "$PODROOT")"
+)
+
+if [ ! -f "$OUTPUT_ZIP" ]; then
+  echo "ERROR: Failed to create output zip: $OUTPUT_ZIP" >&2
+  exit 1
+fi
+
+echo "✅ CocoaPods artifact created successfully:"
+echo "   $OUTPUT_ZIP"
