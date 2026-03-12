@@ -31,8 +31,8 @@ if [ -z "$UTILS_LINK" ]; then
   exit 1
 fi
 
-if ! command -v gdown >/dev/null 2>&1; then
-  echo "ERROR: gdown is not installed. Install it before running this script." >&2
+if ! command -v curl >/dev/null 2>&1; then
+  echo "ERROR: curl is not installed." >&2
   exit 1
 fi
 
@@ -53,14 +53,70 @@ for fw in "${SDK_FRAMEWORKS[@]}"; do
   cp -R "$fw" "$FRAMEWORKS_DIR"/
 done
 
-FILE_ID="$(printf '%s' "$UTILS_LINK" | sed -n 's/.*id=\([^&]*\).*/\1/p')"
+download_google_drive_file() {
+  local file_id="$1"
+  local output_path="$2"
+  local cookie_file
+  local confirm_file
+  local confirm_token
 
-if [ -z "$FILE_ID" ]; then
-  echo "ERROR: Could not extract Google Drive file id from COCOAPODS_UTILS_LINK" >&2
-  exit 1
-fi
+  cookie_file="$(mktemp)"
+  confirm_file="$(mktemp)"
 
-.venv/bin/gdown "$FILE_ID" -O "$UTILS_ZIP"
+  cleanup() {
+    rm -f "$cookie_file" "$confirm_file"
+  }
+  trap cleanup RETURN
+
+  echo "== Downloading Google Drive artifact =="
+
+  curl -fsSL -c "$cookie_file" \
+    "https://drive.google.com/uc?export=download&id=${file_id}" \
+    -o "$confirm_file"
+
+  if file "$confirm_file" | grep -qi 'Zip archive'; then
+    mv "$confirm_file" "$output_path"
+    return 0
+  fi
+
+  confirm_token="$(sed -n 's/.*confirm=\([0-9A-Za-z_-]*\).*/\1/p' "$confirm_file" | head -n 1)"
+
+  if [ -z "$confirm_token" ]; then
+    echo "ERROR: Could not obtain Google Drive confirmation token." >&2
+    echo "Make sure the file is shared correctly and the link is valid." >&2
+    return 1
+  fi
+
+  curl -fsSL -Lb "$cookie_file" \
+    "https://drive.google.com/uc?export=download&confirm=${confirm_token}&id=${file_id}" \
+    -o "$output_path"
+}
+
+download_file() {
+  local url="$1"
+  local output_path="$2"
+  local file_id=""
+
+  if printf '%s' "$url" | grep -q 'drive.google.com'; then
+    file_id="$(printf '%s' "$url" | sed -n 's#.*\/file\/d\/\([^/]*\)\/.*#\1#p')"
+
+    if [ -z "$file_id" ]; then
+      file_id="$(printf '%s' "$url" | sed -n 's/.*[?&]id=\([^&]*\).*/\1/p')"
+    fi
+
+    if [ -z "$file_id" ]; then
+      echo "ERROR: Could not extract Google Drive file id from COCOAPODS_UTILS_LINK" >&2
+      return 1
+    fi
+
+    download_google_drive_file "$file_id" "$output_path"
+  else
+    echo "== Downloading artifact from direct URL =="
+    curl -fsSL "$url" -o "$output_path"
+  fi
+}
+
+download_file "$UTILS_LINK" "$UTILS_ZIP"
 
 if [ ! -f "$UTILS_ZIP" ]; then
   echo "ERROR: Failed to download utils zip: $UTILS_ZIP" >&2
