@@ -26,11 +26,6 @@ OUTPUT_ZIP="$DIST_ROOT/$OUTPUT_NAME"
 UTILS_ZIP="$DIST_ROOT/utils.zip"
 UTILS_EXTRACT_DIR="$DIST_ROOT/utils"
 
-if [ ! -d "$XCROOT" ]; then
-  echo "ERROR: Missing xcframework output folder: $XCROOT" >&2
-  exit 1
-fi
-
 if [ -z "$UTILS_LINK" ]; then
   echo "ERROR: Missing COCOAPODS_UTILS_LINK" >&2
   exit 1
@@ -73,27 +68,3 @@ if [ ! -f "$UTILS_ZIP" ]; then
 fi
 
 unzip -q "$UTILS_ZIP" -d "$UTILS_EXTRACT_DIR"
-
-echo "== Copying utils xcframeworks =="
-mapfile -t UTILS_FRAMEWORKS < <(find "$UTILS_EXTRACT_DIR" -type d -name "*.xcframework" | sort)
-
-if [ "${#UTILS_FRAMEWORKS[@]}" -eq 0 ]; then
-  echo "ERROR: No .xcframework directories found in downloaded utils artifact" >&2
-  find "$UTILS_EXTRACT_DIR" -maxdepth 5 | sort >&2 || true
-  exit 1
-fi
-
-for fw in "${UTILS_FRAMEWORKS[@]}"; do
-  echo "  -> $(basename "$fw")"
-  cp -R "$fw" "$FRAMEWORKS_DIR"/
-done
-
-find "$FRAMEWORKS_DIR" -type d -name "_CodeSignature" -prune -exec rm -rf {} +
-find "$FRAMEWORKS_DIR" -name ".DS_Store" -delete || true
-
-(
-  cd "$PODROOT"
-  /usr/bin/zip -qry "$OUTPUT_ZIP" Frameworks
-)
-
-ls -la "$OUTPUT_ZIP"
