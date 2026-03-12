@@ -60,7 +60,7 @@ if [ -z "$FILE_ID" ]; then
   exit 1
 fi
 
-gdown "$FILE_ID" -O "$UTILS_ZIP"
+.venv/bin/gdown "$FILE_ID" -O "$UTILS_ZIP"
 
 if [ ! -f "$UTILS_ZIP" ]; then
   echo "ERROR: Failed to download utils zip: $UTILS_ZIP" >&2
